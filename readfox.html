@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReadFox — учим английский через тексты</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=PT+Serif:ital,wght@0,400;0,700;1,400&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EEF1E6;
+  --paper-card:#FBFAF4;
+  --ink:#1E2A22;
+  --ink-soft:#566153;
+  --fern:#3F6B4F;
+  --fern-dark:#2C4D38;
+  --amber:#D98E3B;
+  --amber-soft:#F3DDB3;
+  --amber-soft2:#FBEFD8;
+  --rust:#B5483D;
+  --line:#D7DCC6;
+  --shadow:0 2px 10px rgba(30,42,34,0.08);
+  --radius:10px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:'PT Sans',Arial,sans-serif;
+  line-height:1.5;
+  min-height:100vh;
+}
+h1,h2,h3{font-family:'PT Serif',Georgia,serif;margin:0;}
+a{color:var(--fern-dark);}
+button{font-family:inherit;cursor:pointer;}
+button:focus-visible, .word:focus-visible, input:focus-visible, textarea:focus-visible{
+  outline:2px solid var(--fern); outline-offset:2px;
+}
+.hidden{display:none !important;}
+
+/* ---------- Header ---------- */
+.site-header{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;
+  padding:14px 28px;border-bottom:1px solid var(--line);background:var(--paper-card);
+  position:sticky;top:0;z-index:30;flex-wrap:wrap;
+}
+.logo{display:flex;align-items:center;gap:8px;font-family:'PT Serif',serif;font-size:21px;font-weight:700;color:var(--fern-dark);}
+.logo .mark{font-size:23px;}
+.nav{display:flex;gap:4px;flex-wrap:wrap;}
+.nav button{background:none;border:none;padding:8px 14px;border-radius:999px;font-size:15px;color:var(--ink-soft);}
+.nav button:hover{background:var(--amber-soft2);color:var(--ink);}
+.nav button.active{background:var(--fern);color:#fff;}
+.header-stats{display:flex;gap:14px;font-size:13px;color:var(--ink-soft);white-space:nowrap;}
+.header-stats b{color:var(--fern-dark);}
+
+main{max-width:980px;margin:0 auto;padding:32px 24px 90px;}
+
+/* ---------- Hero ---------- */
+.hero{display:grid;grid-template-columns:1.1fr 1fr;gap:36px;align-items:center;padding:10px 0 40px;}
+.hero h1{font-size:38px;line-height:1.18;margin:0 0 14px;}
+.hero p.lead{font-size:17px;color:var(--ink-soft);margin:0 0 22px;max-width:480px;}
+.btn{display:inline-block;border:none;border-radius:8px;padding:12px 22px;font-size:15px;font-weight:700;background:var(--fern);color:#fff;}
+.btn:hover{background:var(--fern-dark);}
+.btn.secondary{background:transparent;border:1.5px solid var(--fern);color:var(--fern-dark);}
+.btn.secondary:hover{background:var(--amber-soft2);}
+
+.demo-card{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:26px;box-shadow:var(--shadow);}
+.demo-card .demo-label{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--amber);font-weight:700;margin-bottom:10px;}
+.demo-sentence{font-family:'PT Serif',serif;font-size:23px;line-height:1.65;margin:0;}
+
+/* ---------- clickable word styling (shared) ---------- */
+.word{cursor:pointer;border-bottom:1px dotted #C9CDB8;padding-bottom:1px;}
+.word:hover{background:var(--amber-soft2);}
+.word.w-hit{border-bottom-color:#8FAE93;}
+.word.w-learning{background:var(--amber-soft);border-bottom:1.5px solid var(--amber);border-radius:3px;padding:0 2px;}
+.word.w-known{border-bottom:none;color:var(--fern-dark);font-weight:700;}
+
+/* ---------- Stats bar ---------- */
+.stats-bar{display:flex;gap:30px;padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:6px 0 36px;flex-wrap:wrap;}
+.stats-bar .stat{font-size:13px;color:var(--ink-soft);}
+.stats-bar .stat b{display:block;font-family:'PT Serif',serif;font-size:24px;color:var(--fern-dark);}
+
+/* ---------- Section heading ---------- */
+.section-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+.section-head h2{font-size:23px;}
+.section-head p{margin:0;color:var(--ink-soft);font-size:14px;}
+
+/* ---------- Library grid ---------- */
+.library-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;}
+@media (max-width:680px){.library-grid{grid-template-columns:1fr;} .hero{grid-template-columns:1fr;}}
+.text-card{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:20px;display:flex;flex-direction:column;gap:8px;box-shadow:var(--shadow);}
+.text-card .level{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;}
+.level .dot{width:7px;height:7px;border-radius:50%;background:var(--line);display:inline-block;}
+.level .dot.on{background:var(--amber);}
+.text-card h3{font-size:19px;}
+.text-card .teaser{color:var(--ink-soft);font-size:14px;flex:1;}
+.text-card .meta{font-size:12px;color:var(--ink-soft);}
+.text-card .row{display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;}
+.text-card .go{font-size:14px;font-weight:700;color:var(--fern-dark);background:none;border:none;padding:0;}
+.text-card.add-own{border-style:dashed;align-items:center;justify-content:center;text-align:center;color:var(--ink-soft);min-height:140px;}
+.text-card.add-own button{background:none;border:none;color:var(--fern-dark);font-weight:700;font-size:15px;}
+.text-card .del{background:none;border:none;color:var(--rust);font-size:12px;}
+
+.custom-form{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin-top:18px;}
+.custom-form label{font-size:13px;color:var(--ink-soft);display:block;margin-bottom:4px;}
+.custom-form input, .custom-form textarea{width:100%;font-family:inherit;font-size:14px;padding:10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);margin-bottom:12px;}
+.custom-form textarea{min-height:140px;resize:vertical;}
+.custom-form .actions{display:flex;gap:10px;}
+
+/* ---------- Reader ---------- */
+.reader-top{display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap;}
+.back-btn{background:none;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:14px;color:var(--ink-soft);}
+.back-btn:hover{background:var(--amber-soft2);}
+.reader-title{font-size:23px;flex:1;}
+.reader-progress{font-size:13px;color:var(--ink-soft);}
+.reader-body{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:34px 38px;box-shadow:var(--shadow);}
+@media (max-width:600px){.reader-body{padding:24px 20px;}}
+.reader-body p{font-family:'PT Serif',serif;font-size:19px;line-height:1.85;margin:0 0 20px;}
+.reader-legend{display:flex;gap:18px;margin-top:16px;font-size:13px;color:var(--ink-soft);flex-wrap:wrap;}
+.reader-legend span{display:inline-flex;align-items:center;gap:6px;}
+.legend-swatch{width:14px;height:14px;border-radius:3px;display:inline-block;}
+
+/* ---------- Tooltip ---------- */
+.tooltip{position:absolute;z-index:50;background:#fff;border:1px solid var(--line);border-top:3px solid var(--amber);
+  border-radius:8px;box-shadow:0 8px 24px rgba(30,42,34,0.18);padding:14px;min-width:220px;max-width:280px;font-size:14px;}
+.tooltip .tt-word{font-family:'PT Serif',serif;font-size:18px;margin-bottom:2px;}
+.tooltip .tt-lemma{font-size:12px;color:var(--ink-soft);margin-bottom:8px;}
+.tooltip .tt-translation{font-size:16px;color:var(--fern-dark);font-weight:700;margin-bottom:10px;}
+.tooltip .tt-status{font-size:12px;color:var(--ink-soft);margin-bottom:8px;}
+.tooltip .tt-actions{display:flex;gap:6px;flex-wrap:wrap;}
+.tooltip .tt-actions button{font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--paper);}
+.tooltip .tt-actions button.primary{background:var(--fern);color:#fff;border-color:var(--fern);}
+.tooltip .tt-actions button.danger{color:var(--rust);}
+.tooltip input.tt-input{width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;margin-bottom:8px;font-family:inherit;}
+.tooltip .tt-close{position:absolute;top:6px;right:8px;background:none;border:none;color:var(--ink-soft);font-size:14px;padding:2px 6px;}
+.tooltip .tt-hint{color:var(--ink-soft);margin-bottom:8px;}
+
+/* ---------- Dictionary ---------- */
+.dict-tabs{display:flex;gap:8px;margin-bottom:18px;}
+.dict-tabs button{background:none;border:1px solid var(--line);border-radius:999px;padding:7px 16px;font-size:13px;color:var(--ink-soft);}
+.dict-tabs button.active{background:var(--fern);color:#fff;border-color:var(--fern);}
+.dict-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+@media (max-width:760px){.dict-grid{grid-template-columns:repeat(2,1fr);}}
+@media (max-width:480px){.dict-grid{grid-template-columns:1fr;}}
+.dict-chip{background:var(--paper-card);border:1px solid var(--line);border-radius:8px;padding:12px;}
+.dict-chip .w{font-family:'PT Serif',serif;font-size:17px;}
+.dict-chip .t{color:var(--ink-soft);font-size:14px;margin:2px 0 8px;}
+.dict-chip .badge{font-size:11px;padding:2px 8px;border-radius:999px;display:inline-block;}
+.badge.learning{background:var(--amber-soft);color:#7A4F12;}
+.badge.known{background:#DCEADD;color:var(--fern-dark);}
+.dict-chip .chip-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.dict-chip .chip-actions button{font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:#fff;}
+.empty-state{padding:40px 20px;text-align:center;color:var(--ink-soft);background:var(--paper-card);border:1px dashed var(--line);border-radius:var(--radius);}
+.empty-state .btn{margin-top:14px;}
+
+/* ---------- Practice ---------- */
+.practice-wrap{max-width:420px;margin:0 auto;text-align:center;}
+.flip-card{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:50px 24px;box-shadow:var(--shadow);
+  min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-family:'PT Serif',serif;font-size:28px;margin-bottom:18px;}
+.flip-card .translation{color:var(--fern-dark);font-size:22px;}
+.practice-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+.practice-progress{margin-top:14px;font-size:13px;color:var(--ink-soft);}
+
+footer{text-align:center;padding:24px;color:var(--ink-soft);font-size:13px;border-top:1px solid var(--line);}
+
+@media (prefers-reduced-motion:reduce){*{transition:none !important;}}
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="logo"><span class="mark">🦊</span>ReadFox</div>
+  <nav class="nav">
+    <button data-view="home" class="active">Главная</button>
+    <button data-view="reader" id="navReader" class="hidden">Чтение</button>
+    <button data-view="dictionary">Мой словарь</button>
+    <button data-view="practice">Тренировка</button>
+  </nav>
+  <div class="header-stats">
+    <span>В изучении: <b id="statLearning">0</b></span>
+    <span>Изучено: <b id="statKnown">0</b></span>
+  </div>
+</header>
+
+<main>
+
+  <section data-view="home" class="view">
+    <div class="hero">
+      <div>
+        <h1>Читайте по-английски — слова запомнятся сами</h1>
+        <p class="lead">Нажимайте на любое слово в тексте, чтобы увидеть перевод, и собирайте личный словарь по ходу чтения. Без отдельных уроков — только живые тексты.</p>
+        <button class="btn" id="heroStart">Выбрать текст</button>
+      </div>
+      <div class="demo-card">
+        <div class="demo-label">Попробуйте прямо сейчас</div>
+        <p class="demo-sentence" id="demoSentence"></p>
+      </div>
+    </div>
+
+    <div class="stats-bar">
+      <div class="stat"><b id="statTextsCount">0</b>текстов прочитано</div>
+      <div class="stat"><b id="statLearningCount">0</b>слов в изучении</div>
+      <div class="stat"><b id="statKnownCount">0</b>слов изучено</div>
+    </div>
+
+    <div class="section-head">
+      <h2>Тексты для чтения</h2>
+      <p>От простого утреннего распорядка до басни о лисе.</p>
+    </div>
+    <div class="library-grid" id="libraryGrid"></div>
+
+    <div id="customFormWrap" class="hidden"></div>
+  </section>
+
+  <section data-view="reader" class="view hidden">
+    <div class="reader-top">
+      <button class="back-btn" id="readerBack">← К текстам</button>
+      <h2 class="reader-title" id="readerTitle"></h2>
+      <span class="reader-progress" id="readerProgress"></span>
+    </div>
+    <div class="reader-body" id="readerBody"></div>
+    <div class="reader-legend">
+      <span><span class="legend-swatch" style="background:var(--amber-soft);border:1px solid var(--amber);"></span>В изучении</span>
+      <span><span class="legend-swatch" style="background:#DCEADD;"></span>Изучено</span>
+      <span><span class="legend-swatch" style="border-bottom:1.5px dotted #8FAE93;background:transparent;"></span>Есть перевод — нажмите</span>
+    </div>
+  </section>
+
+  <section data-view="dictionary" class="view hidden">
+    <div class="section-head">
+      <h2>Мой словарь</h2>
+      <p>Слова, которые вы встретили во время чтения.</p>
+    </div>
+    <div class="dict-tabs">
+      <button data-filter="all" class="active">Все</button>
+      <button data-filter="learning">В изучении</button>
+      <button data-filter="known">Изучено</button>
+    </div>
+    <div id="dictContent"></div>
+  </section>
+
+  <section data-view="practice" class="view hidden">
+    <div class="section-head"><h2>Тренировка слов</h2><p>Карточки из слов со статусом «в изучении».</p></div>
+    <div id="practiceContent"></div>
+  </section>
+
+</main>
+
+<footer>ReadFox — учебный проект для интерактивного чтения на английском языке.</footer>
+
+<div id="tooltipLayer"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   ДАННЫЕ: тексты для чтения
+   ============================================================ */
+const TEXTS = [
+  {
+    id:'morning', level:'beginner', title:'Моё утро',
+    teaser:'Простой рассказ о ежедневном утреннем распорядке — хороший текст для начала.',
+    body:
+`Every morning, I wake up at seven o'clock. First, I open the window and look at the sky. The air is fresh and cool. I make my bed and go to the bathroom. I wash my face and brush my teeth.
+
+Then I go to the kitchen and make breakfast. I usually eat eggs, bread, and fruit. I drink a cup of tea or coffee. After breakfast, I get dressed and pack my bag. I check my phone for messages.
+
+At eight o'clock, I leave the house and walk to the bus stop. The bus comes, and I sit near the window. I watch the streets and the people. I think about my plans for the day. School starts at nine, and I am never late.`
+  },
+  {
+    id:'park', level:'beginner', title:'Прогулка в парке',
+    teaser:'Воскресная прогулка семьи в парке: утки, велосипед и закат.',
+    body:
+`On Sunday, my family likes to walk in the park near our home. The park is big and green, with tall trees and a small lake. We usually go there after lunch.
+
+My little sister loves to feed the ducks. She brings bread and throws small pieces into the water. The ducks swim fast when they see food. My father likes to ride his bicycle along the path, while my mother sits on a bench and reads a book. I often play with our dog. He runs after a ball and brings it back to me.
+
+Sometimes we see other families having a picnic on the grass. When the sun starts to set, the sky turns orange and pink. We sit together and watch the colors change. Then we walk home, tired but happy.`
+  },
+  {
+    id:'coffee', level:'intermediate', title:'Кофейня на углу',
+    teaser:'Короткая история об уютной кофейне и её хозяине по имени Том.',
+    body:
+`There is a small coffee shop on the corner of my street. It opened two years ago, but it already feels like an old friend. Every morning, the owner, a quiet man named Tom, stands behind the counter and grinds fresh coffee beans. The smell fills the whole street and pulls people inside.
+
+I usually stop there before work, even though I am always in a hurry. Tom remembers my order without asking. He simply nods and starts making my coffee while I find a seat by the window. The shop is narrow, with wooden tables and shelves full of old books. Soft music plays quietly in the background.
+
+Sometimes I notice strangers having quiet conversations, sharing secrets or making plans. Once, an elderly woman told me that this shop reminded her of a place she visited as a child in another country. I think that is why people keep coming back — not just for the coffee, but for the feeling of being somewhere familiar. When I finally leave with my cup in hand, the cold morning air feels a little warmer.`
+  },
+  {
+    id:'internet', level:'intermediate', title:'Как интернет изменил всё',
+    teaser:'Небольшое размышление о том, как технологии изменили общение, бизнес и образование.',
+    body:
+`Thirty years ago, very few people had access to the internet. Today, it is hard to imagine daily life without it. The internet has changed the way we communicate, work, and learn. In the past, sending a letter took days or even weeks. Now, a message can reach someone on the other side of the world in seconds.
+
+Businesses have also changed completely. Small shops can sell their products to customers in different countries through online stores. Education has become more open as well. Anyone with an internet connection can watch lectures from famous universities for free.
+
+However, these changes also bring new problems. People spend more time looking at screens and less time talking face to face. Some experts worry that young people are losing important social skills. Others believe that technology simply created new ways to connect, rather than replacing old ones. Whatever the truth is, one thing is certain: the internet will continue to shape our future in ways we cannot fully predict yet.`
+  },
+  {
+    id:'fox', level:'advanced', title:'Лиса и путник',
+    teaser:'Оригинальная басня о хитрой лисе и заблудшем путнике.',
+    body:
+`Long ago, in a forest where the trees grew taller than towers, there lived a fox known for her cleverness. One evening, a tired traveler lost his way and wandered into her territory. Hungry and confused, he sat beneath an old oak and wept quietly, certain that he would never find the road again.
+
+The fox watched him from behind a bush, curious about this strange creature who seemed so helpless. Instead of running away, she stepped closer and asked why he was crying. Surprised that an animal could speak, the traveler explained his situation, expecting little sympathy. To his astonishment, the fox offered to guide him, on one condition: he had to listen carefully to everything she said, without questioning her choices.
+
+The traveler agreed, desperate enough to trust a stranger, even one with sharp teeth and clever eyes. They walked through narrow paths and crossed a shallow river, the fox leading confidently as if she had memorized every stone and shadow. By dawn, they reached the edge of the forest, where a distant village glowed beneath the rising sun.
+
+The traveler thanked her with tears of relief, offering whatever he could give in return. The fox merely smiled and said that kindness, unlike gold, never needs to be repaid. Then she disappeared back into the shadows, leaving the man to wonder whether he had imagined the entire encounter, or whether wisdom truly could wear fur and walk on four legs.`
+  }
+];
+
+const LEVEL_LABEL = {beginner:'Начальный', intermediate:'Средний', advanced:'Продвинутый', custom:'Свой текст'};
+const LEVEL_DOTS = {beginner:1, intermediate:2, advanced:3, custom:0};
+
+/* ============================================================
+   ДАННЫЕ: встроенный словарь (база) и неправильные формы
+   ============================================================ */
+const BASE_DICT = {
+  // местоимения
+  "i":"я","you":"ты, вы","he":"он","she":"она","it":"оно, это","we":"мы","they":"они",
+  "me":"меня, мне","him":"его, ему","her":"её, ей","us":"нас, нам","them":"их, им",
+  "my":"мой","your":"твой, ваш","his":"его","its":"его, её (о предмете)","our":"наш","their":"их",
+  "mine":"моё","yours":"твоё, ваше","ours":"наше","theirs":"их",
+  "myself":"себя (я сам)","yourself":"себя (ты сам)","himself":"себя (он сам)","herself":"себя (она сама)",
+  "itself":"само","ourselves":"себя (мы сами)","yourselves":"себя (вы сами)","themselves":"себя (они сами)",
+  "this":"этот, это","that":"тот, то","these":"эти","those":"те",
+  "who":"кто","whom":"кого, кому","whose":"чей","which":"который, какой","what":"что, какой",
+  "when":"когда","where":"где, куда","first":"первый, сначала","not":"не",
+  "someone":"кто-то","somebody":"кто-то","something":"что-то","somewhere":"где-то, куда-то",
+  "anyone":"кто-нибудь","anybody":"кто-нибудь","anything":"что-нибудь","anywhere":"где-нибудь",
+  "everyone":"каждый, все","everybody":"все","everything":"всё","everywhere":"везде",
+  "nobody":"никто","nothing":"ничто","nowhere":"нигде",
+  // артикли / детерминаторы
+  "a":"артикль (один, какой-то)","an":"артикль (перед гласным звуком)","the":"определённый артикль",
+  "some":"немного, некоторые","any":"любой, какой-нибудь","no":"никакой, нет",
+  "every":"каждый","each":"каждый (из)","all":"все, весь","both":"оба",
+  "few":"мало, немного","many":"много","much":"много",
+  "more":"больше","most":"большинство, больше всего","less":"меньше","least":"меньше всего",
+  "other":"другой","another":"другой, ещё один","such":"такой","own":"собственный",
+  "good":"хороший","better":"лучше","best":"лучший, лучше всего",
+  "bad":"плохой","worse":"хуже","worst":"худший",
+  // предлоги
+  "in":"в","on":"на","at":"в, у (момент времени)","by":"у, около, к (сроку)","for":"для, за",
+  "with":"с","about":"о, около","against":"против","between":"между","into":"внутрь",
+  "through":"через","during":"во время","before":"до, перед","after":"после",
+  "above":"над","below":"под","to":"к, в","from":"от, из","up":"вверх","down":"вниз",
+  "off":"с (поверхности)","over":"над, через","under":"под","of":"из, о (родительный падеж)",
+  "out":"из, наружу","near":"рядом, около","along":"вдоль","across":"через, напротив",
+  "behind":"за, позади","beyond":"за пределами","beside":"рядом с","among":"среди",
+  "around":"вокруг","without":"без","within":"в пределах","toward":"к, в направлении","upon":"на",
+  // союзы
+  "and":"и","but":"но","or":"или","nor":"ни","so":"поэтому, так","yet":"всё же, однако",
+  "because":"потому что","although":"хотя","though":"хотя, всё же","while":"пока, в то время как",
+  "if":"если","unless":"если не","since":"с тех пор как, поскольку","whether":"ли (частица)",
+  "as":"как, так как","than":"чем","however":"однако","rather":"скорее, вместо",
+  "whatever":"что бы ни","cannot":"не могу, не может",
+  // вспомогательные/модальные глаголы
+  "be":"быть","am":"есть (я)","is":"есть (он/она/оно)","are":"есть (мы/вы/они)",
+  "was":"был(а)","were":"были","been":"был (причастие)","being":"будучи",
+  "have":"иметь","has":"имеет","had":"имел(а)","having":"имея",
+  "do":"делать","does":"делает","did":"делал(а)","doing":"делая","done":"сделано, готово",
+  "will":"буду, будет (будущее время)","would":"бы (условное наклонение)",
+  "shall":"буду (формальное будущее)","should":"следует, должен",
+  "can":"могу, умею","could":"мог(ла) бы","may":"может быть, могу","might":"мог бы (вероятность)","must":"должен, обязан",
+  // сокращённые формы (контракции)
+  "don't":"не (с глаголом в наст. времени)","doesn't":"не (с глаголом, он/она/оно)","didn't":"не (с глаголом в прош. времени)",
+  "isn't":"не является, не","aren't":"не являются, не","wasn't":"не был(а)","weren't":"не были",
+  "can't":"не могу, не может","couldn't":"не мог(ла) бы","won't":"не буду, не будет","wouldn't":"не стал(а) бы",
+  "shouldn't":"не должен, не следует","haven't":"не имею, не имеем","hasn't":"не имеет","hadn't":"не имел(а)",
+  "i'm":"я (есть)","you're":"ты, вы (есть)","he's":"он (есть), у него есть","she's":"она (есть), у неё есть",
+  "it's":"это (есть)","we're":"мы (есть)","they're":"они (есть)",
+  "i've":"я (имею — перфект)","you've":"вы (имеете)","we've":"мы (имеем)","they've":"они (имеют)",
+  "i'll":"я (буду)","you'll":"ты (будешь)","he'll":"он (будет)","she'll":"она (будет)","we'll":"мы (будем)","they'll":"они (будут)",
+  "i'd":"я (хотел бы / had)","let's":"давай, давайте","that's":"это (есть)","there's":"там есть, имеется",
+  "what's":"что (это)","who's":"кто (это)",
+  // время
+  "morning":"утро","afternoon":"день (после полудня)","evening":"вечер","night":"ночь",
+  "today":"сегодня","yesterday":"вчера","tomorrow":"завтра",
+  "day":"день","week":"неделя","month":"месяц","year":"год","hour":"час","minute":"минута","second":"секунда",
+  "time":"время","now":"сейчас","then":"тогда, потом",
+  "always":"всегда","never":"никогда","sometimes":"иногда","often":"часто","usually":"обычно",
+  "already":"уже","still":"всё ещё","again":"снова","soon":"скоро","later":"позже",
+  "early":"рано","late":"поздно","ago":"назад (тому)","once":"однажды, один раз","twice":"два раза",
+  "o'clock":"час (при указании времени)",
+  // числа
+  "one":"один","two":"два","three":"три","four":"четыре","five":"пять",
+  "six":"шесть","seven":"семь","eight":"восемь","nine":"девять","ten":"десять",
+  "eleven":"одиннадцать","twelve":"двенадцать","twenty":"двадцать","thirty":"тридцать",
+  "forty":"сорок","fifty":"пятьдесят","hundred":"сто","thousand":"тысяча",
+  // дни недели
+  "monday":"понедельник","tuesday":"вторник","wednesday":"среда","thursday":"четверг",
+  "friday":"пятница","saturday":"суббота","sunday":"воскресенье",
+  // утро (текст 1)
+  "wake":"просыпаться","open":"открывать","window":"окно","look":"смотреть","sky":"небо",
+  "air":"воздух","fresh":"свежий","cool":"прохладный","make":"делать, готовить","bed":"кровать",
+  "go":"идти, ехать","bathroom":"ванная","wash":"мыть","face":"лицо","brush":"чистить щёткой, щётка",
+  "tooth":"зуб","kitchen":"кухня","breakfast":"завтрак","eat":"есть, кушать","egg":"яйцо",
+  "bread":"хлеб","fruit":"фрукт","drink":"пить, напиток","cup":"чашка","tea":"чай","coffee":"кофе",
+  "dress":"одеваться, платье","dressed":"одетый","pack":"паковать, собирать","bag":"сумка",
+  "check":"проверять","phone":"телефон","message":"сообщение","leave":"уходить, покидать",
+  "house":"дом","walk":"идти пешком, гулять","bus":"автобус","stop":"остановка, останавливаться",
+  "come":"приходить","sit":"сидеть","watch":"смотреть, наблюдать, часы","street":"улица",
+  "people":"люди","person":"человек","think":"думать","plan":"план, планировать","school":"школа",
+  "start":"начинать",
+  // парк (текст 2)
+  "family":"семья","like":"нравиться, любить","home":"дом","big":"большой","green":"зелёный",
+  "tall":"высокий","tree":"дерево","small":"маленький","lake":"озеро","lunch":"обед","park":"парк",
+  "little":"маленький, немного","sister":"сестра","love":"любить","feed":"кормить","duck":"утка",
+  "bring":"приносить","throw":"бросать","piece":"кусок","water":"вода","swim":"плавать",
+  "fast":"быстрый, быстро","see":"видеть","food":"еда","father":"отец","ride":"ехать верхом, катаься",
+  "bicycle":"велосипед","path":"тропа, путь","mother":"мать","bench":"скамейка","read":"читать",
+  "book":"книга","play":"играть","dog":"собака","run":"бегать","ball":"мяч","back":"назад, спина",
+  "having":"имея",
+  "picnic":"пикник","grass":"трава","sun":"солнце","set":"садиться (о солнце), устанавливать",
+  "turn":"поворачивать(ся), превращаться","orange":"оранжевый, апельсин","pink":"розовый",
+  "together":"вместе","color":"цвет","change":"менять(ся)","tired":"усталый","happy":"счастливый",
+  // кофейня (текст 3)
+  "there":"там","shop":"магазин","corner":"угол","two":"два",
+  "feel":"чувствовать","old":"старый","friend":"друг","owner":"владелец","quiet":"тихий",
+  "man":"мужчина","name":"имя","named":"по имени","stand":"стоять",
+  "counter":"прилавок","grind":"молоть","bean":"зерно, бобы","smell":"запах, пахнуть",
+  "fill":"заполнять","whole":"весь, целый","pull":"тянуть, притягивать","inside":"внутри",
+  "work":"работать, работа","even":"даже","hurry":"спешить, спешка",
+  "remember":"помнить","order":"заказ, заказывать","ask":"спрашивать","simply":"просто",
+  "nod":"кивать","seat":"место, сиденье","narrow":"узкий","wooden":"деревянный","table":"стол",
+  "shelf":"полка","full":"полный","soft":"мягкий","music":"музыка","quietly":"тихо",
+  "background":"фон","notice":"замечать","stranger":"незнакомец","conversation":"разговор",
+  "share":"делиться","secret":"секрет","elderly":"пожилой","woman":"женщина","tell":"говорить, рассказывать",
+  "remind":"напоминать","place":"место","visit":"посещать","country":"страна","why":"почему",
+  "keep":"хранить, продолжать","just":"просто, только","feeling":"чувство","familiar":"знакомый",
+  "finally":"наконец","hand":"рука","cold":"холодный","warm":"тёплый","warmer":"теплее",
+  // интернет (текст 4)
+  "very":"очень","access":"доступ","hard":"трудный, тяжело","imagine":"представлять (себе)",
+  "daily":"ежедневный","life":"жизнь","communicate":"общаться","learn":"учить(ся)",
+  "past":"прошлое, прошлый","send":"посылать","letter":"письмо","take":"брать, занимать (время)",
+  "reach":"достигать","side":"сторона","world":"мир","business":"бизнес, дело",
+  "also":"также","completely":"полностью","sell":"продавать","product":"продукт",
+  "customer":"покупатель, клиент","different":"другой, разный","store":"магазин",
+  "education":"образование","become":"становиться","well":"хорошо, колодец","connection":"связь, подключение",
+  "online":"онлайн","internet":"интернет",
+  "lecture":"лекция","famous":"известный","university":"университет","free":"бесплатный, свободный",
+  "problem":"проблема","spend":"тратить","screen":"экран","talk":"говорить, разговаривать",
+  "expert":"эксперт","worry":"беспокоиться","young":"молодой","lose":"терять","important":"важный",
+  "social":"социальный","skill":"навык","believe":"верить, полагать","technology":"технология",
+  "create":"создавать","way":"способ, путь","connect":"соединять","replace":"заменять",
+  "truth":"правда","certain":"определённый, уверенный","continue":"продолжать","shape":"формировать, форма",
+  "future":"будущее","fully":"полностью","predict":"предсказывать",
+  // лиса и путник (текст 5)
+  "long":"длинный, долго","forest":"лес","grow":"расти","tower":"башня","live":"жить",
+  "known":"известный","cleverness":"хитрость, сообразительность","traveler":"путник, путешественник",
+  "wander":"блуждать","territory":"территория","hungry":"голодный","confused":"сбитый с толку",
+  "beneath":"под","oak":"дуб","weep":"плакать","road":"дорога","bush":"куст","curious":"любопытный",
+  "strange":"странный","creature":"существо","seem":"казаться","helpless":"беспомощный","clever":"умный, хитрый",
+  "instead":"вместо (этого)","away":"прочь","step":"шаг, шагать","close":"закрывать, близкий",
+  "closer":"ближе","cry":"плакать, кричать","surprise":"удивлять","surprised":"удивлённый",
+  "animal":"животное","speak":"говорить","explain":"объяснять","situation":"ситуация",
+  "expect":"ожидать","sympathy":"сочувствие","astonishment":"изумление","offer":"предлагать",
+  "guide":"вести, гид","condition":"условие","listen":"слушать","carefully":"осторожно, внимательно",
+  "question":"вопрос, расспрашивать","choice":"выбор","agree":"соглашаться","desperate":"отчаянный",
+  "enough":"достаточно","trust":"доверять","sharp":"острый","eye":"глаз","cross":"пересекать",
+  "shallow":"неглубокий","river":"река","lead":"вести","confidently":"уверенно",
+  "memorize":"запоминать наизусть","stone":"камень","shadow":"тень","dawn":"рассвет",
+  "edge":"край","distant":"дальний, отдалённый","village":"деревня","glow":"светиться",
+  "rise":"подниматься","thank":"благодарить","tear":"слеза","relief":"облегчение","give":"давать",
+  "return":"возвращать(ся), возвращение","merely":"просто, всего лишь","smile":"улыбка, улыбаться",
+  "kind":"добрый, вид (тип)","kindness":"доброта","unlike":"в отличие от","gold":"золото",
+  "need":"нуждаться, нужда","repay":"отплатить","disappear":"исчезать","wonder":"удивляться, интересоваться",
+  "entire":"весь, целый","encounter":"встреча, столкновение","wisdom":"мудрость","truly":"истинно, действительно",
+  "wear":"носить (одежду)","fur":"мех","leg":"нога",
+  // дополнительные общеупотребительные слова
+  "english":"английский","text":"текст","new":"новый","word":"слово","sentence":"предложение",
+  "fox":"лиса","right":"право, правый, верно","left":"левый, ушёл (от leave)",
+  "high":"высокий","low":"низкий","light":"свет, легкий","dark":"тёмный","heavy":"тяжёлый",
+  "strong":"сильный","weak":"слабый","rich":"богатый","poor":"бедный","clean":"чистый","dirty":"грязный",
+  "empty":"пустой","cheap":"дешёвый","expensive":"дорогой","far":"далеко","slow":"медленный",
+  "hot":"горячий","wet":"влажный, мокрый","dry":"сухой","easy":"лёгкий, простой","loud":"громкий",
+  "beautiful":"красивый","ugly":"уродливый","nice":"приятный, милый","rude":"грубый","polite":"вежливый",
+  "brave":"смелый","afraid":"испуганный","angry":"злой, сердитый","sad":"печальный",
+  "bored":"скучающий","excited":"взволнованный, восторженный","comfortable":"удобный",
+  "dangerous":"опасный","safe":"безопасный","careful":"осторожный","lucky":"удачливый",
+  "popular":"популярный","common":"обычный, общий","rare":"редкий","special":"особенный",
+  "normal":"нормальный","simple":"простой","complex":"сложный","modern":"современный",
+  "ancient":"древний","traditional":"традиционный","natural":"природный, естественный",
+  "public":"публичный, общественный","private":"частный","busy":"занятой","available":"доступный",
+  "ready":"готовый","sure":"уверенный","necessary":"необходимый","useful":"полезный","useless":"бесполезный",
+  "similar":"похожий","equal":"равный","exact":"точный","perfect":"идеальный","terrible":"ужасный",
+  "use":"использовать, использование",
+  "wonderful":"чудесный","amazing":"удивительный","fantastic":"фантастический","excellent":"превосходный",
+  "fine":"хороший, в порядке","city":"город","town":"городок","building":"здание","room":"комната",
+  "door":"дверь","wall":"стена","floor":"пол, этаж","roof":"крыша","garden":"сад","yard":"двор",
+  "key":"ключ","lock":"замок, запирать","lamp":"лампа","chair":"стул","box":"коробка","bottle":"бутылка",
+  "glass":"стакан, стекло","plate":"тарелка","knife":"нож","fork":"вилка","spoon":"ложка",
+  "towel":"полотенце","soap":"мыло","mirror":"зеркало","clock":"часы (настенные)","calendar":"календарь",
+  "map":"карта","picture":"картина, фото","photo":"фото","painting":"картина","shape":"форма",
+  "size":"размер","weight":"вес","length":"длина","width":"ширина","height":"высота","distance":"расстояние",
+  "speed":"скорость","temperature":"температура","weather":"погода","rain":"дождь","snow":"снег",
+  "wind":"ветер","cloud":"облако","storm":"шторм, буря","ice":"лёд","fire":"огонь","smoke":"дым",
+  "earth":"земля","ground":"земля, почва","hill":"холм","mountain":"гора","valley":"долина",
+  "sea":"море","ocean":"океан","island":"остров","beach":"пляж","desert":"пустыня","jungle":"джунгли",
+  "field":"поле","farm":"ферма","leaf":"лист","root":"корень","seed":"семя","vegetable":"овощ",
+  "plant":"растение, сажать","bird":"птица","fish":"рыба","insect":"насекомое","snake":"змея",
+  "lion":"лев","tiger":"тигр","bear":"медведь","wolf":"волк","elephant":"слон","monkey":"обезьяна",
+  "rabbit":"кролик","mouse":"мышь","horse":"лошадь","cow":"корова","sheep":"овца","pig":"свинья",
+  "chicken":"курица","goat":"коза","cat":"кошка","wing":"крыло","tail":"хвост","feather":"перо",
+  "claw":"коготь","paw":"лапа","body":"тело","head":"голова","hair":"волосы","ear":"ухо","nose":"нос",
+  "mouth":"рот","lip":"губа","tongue":"язык","neck":"шея","shoulder":"плечо","arm":"рука (от плеча)",
+  "elbow":"локоть","finger":"палец (руки)","nail":"ноготь","chest":"грудь","stomach":"живот",
+  "knee":"колено","foot":"нога, ступня","toe":"палец (ноги)","skin":"кожа","bone":"кость",
+  "blood":"кровь","heart":"сердце","brain":"мозг","voice":"голос","breath":"дыхание","dream":"мечта, сон",
+  "health":"здоровье","illness":"болезнь","pain":"боль","medicine":"лекарство","doctor":"врач",
+  "nurse":"медсестра","hospital":"больница","patient":"пациент","disease":"болезнь",
+  "baby":"младенец","boy":"мальчик","girl":"девочка","adult":"взрослый","teenager":"подросток",
+  "parent":"родитель","brother":"брат","son":"сын","daughter":"дочь","husband":"муж","wife":"жена",
+  "child":"ребёнок","neighbor":"сосед","enemy":"враг","guest":"гость","host":"хозяин (принимающий)",
+  "teacher":"учитель","student":"студент, ученик","worker":"работник","employee":"сотрудник",
+  "manager":"менеджер","boss":"начальник","engineer":"инженер","lawyer":"юрист","police":"полиция",
+  "soldier":"солдат","artist":"художник","writer":"писатель","musician":"музыкант","actor":"актёр",
+  "scientist":"учёный","farmer":"фермер","driver":"водитель","cook":"повар, готовить",
+  "king":"король","queen":"королева","president":"президент","government":"правительство",
+  "leader":"лидер","citizen":"гражданин","society":"общество","culture":"культура",
+  "religion":"религия","language":"язык (речь)","nation":"нация","war":"война","peace":"мир (без войны)",
+  "army":"армия","weapon":"оружие","law":"закон","rule":"правило","freedom":"свобода",
+  "justice":"справедливость","crime":"преступление","prison":"тюрьма","court":"суд","judge":"судья",
+  "money":"деньги","bank":"банк","coin":"монета","price":"цена","cost":"стоимость, стоить",
+  "value":"ценность","profit":"прибыль","loss":"потеря","market":"рынок","trade":"торговля",
+  "company":"компания","factory":"завод","office":"офис","service":"услуга","class":"класс, занятие",
+  "lesson":"урок","page":"страница","story":"история, рассказ","novel":"роман","poem":"стихотворение",
+  "news":"новости","newspaper":"газета","magazine":"журнал","article":"статья","report":"отчёт",
+  "information":"информация","knowledge":"знание","idea":"идея","answer":"ответ","solution":"решение",
+  "example":"пример","fact":"факт","opinion":"мнение","argument":"аргумент, спор","discussion":"обсуждение",
+  "grammar":"грамматика","meaning":"значение","email":"электронное письмо","call":"звонок, звонить",
+  "computer":"компьютер","keyboard":"клавиатура","program":"программа","application":"приложение",
+  "website":"сайт","video":"видео","song":"песня","sound":"звук","noise":"шум","silence":"тишина",
+  "area":"область, район","region":"регион","location":"местоположение","direction":"направление",
+  "north":"север","south":"юг","east":"восток","west":"запад","top":"верх","bottom":"низ",
+  "middle":"середина","center":"центр","end":"конец","beginning":"начало","part":"часть",
+  "half":"половина","level":"уровень","line":"линия, строка","point":"точка, момент","space":"пространство",
+  "help":"помогать","want":"хотеть","hate":"ненавидеть","hope":"надеяться","wish":"желать",
+  "prefer":"предпочитать","decide":"решать","choose":"выбирать","try":"пытаться","allow":"позволять",
+  "forbid":"запрещать","suggest":"предлагать","recommend":"рекомендовать","disagree":"не соглашаться",
+  "accept":"принимать","refuse":"отказывать(ся)","promise":"обещать","warn":"предупреждать",
+  "describe":"описывать","discuss":"обсуждать","mention":"упоминать","announce":"объявлять",
+  "declare":"заявлять","admit":"признавать","deny":"отрицать","pretend":"притворяться",
+  "doubt":"сомневаться","guess":"угадывать, предполагать","assume":"предполагать","realize":"понимать, осознавать",
+  "recognize":"узнавать, признавать","study":"изучать","practice":"практиковать(ся)","understand":"понимать",
+  "know":"знать","discover":"открывать, обнаруживать","explore":"исследовать","search":"искать",
+  "find":"находить","seek":"искать","hear":"слышать","taste":"вкус, пробовать на вкус","touch":"трогать",
+  "measure":"измерять","count":"считать","calculate":"вычислять","compare":"сравнивать",
+  "examine":"осматривать","prove":"доказывать","solve":"решать (проблему)","produce":"производить",
+  "design":"проектировать, дизайн","invent":"изобретать","develop":"развивать, разрабатывать",
+  "improve":"улучшать","repair":"ремонтировать","fix":"исправлять, ремонтировать","destroy":"разрушать",
+  "damage":"повреждать","protect":"защищать","save":"спасать, сохранять","rescue":"спасать",
+  "defend":"защищать","attack":"атаковать","fight":"драться, бороться","hurt":"причинять боль, больно",
+  "injure":"ранить","kill":"убивать","die":"умирать","survive":"выживать","exist":"существовать",
+  "happen":"случаться","occur":"происходить","finish":"заканчивать","complete":"завершать",
+  "succeed":"преуспевать","fail":"терпеть неудачу","win":"победить, выигрывать","compete":"соревноваться",
+  "achieve":"достигать","arrive":"прибывать","enter":"входить","exit":"выходить","stay":"оставаться",
+  "remain":"оставаться","wait":"ждать","rush":"торопиться","hesitate":"колебаться","pause":"приостанавливаться, пауза",
+  "rest":"отдыхать, отдых","relax":"расслабляться","sleep":"спать, сон","travel":"путешествовать",
+  "journey":"путешествие, поездка","trip":"поездка","tour":"тур, экскурсия","move":"двигать(ся)",
+  "jump":"прыгать","climb":"подниматься, лазать","fall":"падать","drop":"падать, бросать",
+  "fly":"летать","drive":"водить (машину)","carry":"носить, нести","receive":"получать",
+  "buy":"покупать","pay":"платить","borrow":"брать взаймы","lend":"давать взаймы",
+  "owe":"быть должным","earn":"зарабатывать","afford":"позволить себе (финансово)","divide":"делить",
+  "join":"присоединяться, соединять","separate":"разделять, отдельный","combine":"объединять",
+  "mix":"смешивать","add":"добавлять","remove":"удалять","increase":"увеличивать(ся)",
+  "decrease":"уменьшать(ся)","shrink":"сжиматься","expand":"расширять(ся)","reduce":"уменьшать",
+  "raise":"поднимать, повышать","lift":"поднимать","lower":"опускать, снижать","push":"толкать",
+  "catch":"ловить, поймать","kick":"пинать","grab":"хватать","release":"отпускать, выпускать",
+  "cover":"покрывать","hide":"прятать(ся)","reveal":"раскрывать, показывать","show":"показывать",
+  "act":"действовать, поступать","behave":"вести себя","sound":"звучать, звук",
+  // базовые формы для неправильных глаголов (см. IRREGULAR)
+  "begin":"начинать","break":"ломать","build":"строить","deal":"иметь дело, сделка",
+  "draw":"рисовать","forget":"забывать","get":"получать, доставать","hang":"висеть, вешать",
+  "hold":"держать","lay":"класть","mean":"означать","meet":"встречать(ся)","ring":"звонить, кольцо",
+  "say":"говорить, сказать","shine":"светить(ся)","shoot":"стрелять","sing":"петь",
+  "strike":"ударять, бастовать","swear":"клясться, ругаться","teach":"учить (кого-то)","write":"писать",
+  "goose":"гусь","loaf":"буханка (хлеба)","scarf":"шарф"
+};
+
+const IRREGULAR = {
+  "went":"go","gone":"go","was":"be","were":"be","is":"be","am":"be","are":"be","been":"be","being":"be",
+  "has":"have","had":"have","having":"have","did":"do","does":"do","doing":"do",
+  "took":"take","taken":"take","saw":"see","seen":"see","came":"come","made":"make",
+  "knew":"know","thought":"think","gave":"give","given":"give","told":"tell","got":"get","gotten":"get",
+  "left":"leave","felt":"feel","kept":"keep","brought":"bring","bought":"buy","caught":"catch",
+  "taught":"teach","held":"hold","heard":"hear","met":"meet","ran":"run","sent":"send",
+  "slept":"sleep","spent":"spend","stood":"stand","understood":"understand","woke":"wake","woken":"wake",
+  "wrote":"write","written":"write","fell":"fall","fallen":"fall","flew":"fly","flown":"fly",
+  "forgot":"forget","forgotten":"forget","hung":"hang","drew":"draw","drawn":"draw",
+  "ate":"eat","eaten":"eat","drank":"drink","drunk":"drink","spoke":"speak","spoken":"speak",
+  "broke":"break","broken":"break","chose":"choose","chosen":"choose","drove":"drive","driven":"drive",
+  "rode":"ride","ridden":"ride","rose":"rise","risen":"rise","grew":"grow","grown":"grow",
+  "threw":"throw","thrown":"throw","won":"win","began":"begin","begun":"begin","swam":"swim","swum":"swim",
+  "sang":"sing","sung":"sing","rang":"ring","rung":"ring","built":"build","dealt":"deal",
+  "meant":"mean","paid":"pay","laid":"lay","led":"lead","lent":"lend","lost":"lose","sold":"sell",
+  "shone":"shine","shot":"shoot","struck":"strike","swore":"swear","sworn":"swear","wore":"wear",
+  "worn":"wear","wept":"weep","sat":"sit","said":"say","repaid":"repay","fought":"fight","sought":"seek",
+  "hid":"hide","hidden":"hide","children":"child","men":"man","women":"woman","feet":"foot",
+  "teeth":"tooth","mice":"mouse","geese":"goose","leaves":"leaf","wolves":"wolf","knives":"knife",
+  "wives":"wife","loaves":"loaf","halves":"half","scarves":"scarf","shelves":"shelf"
+};
+
+/* ============================================================
+   СОСТОЯНИЕ И ХРАНИЛИЩЕ
+   ============================================================ */
+const STORAGE_KEY = "readfox-state";
+let state = { userWords:{}, customTexts:[], readTextIds:[] };
+let currentText = null;
+let currentFilter = "all";
+let practiceQueue = [];
+let practiceIndex = 0;
+let practiceRevealed = false;
+let saveTimer = null;
+
+async function loadState(){
+  try{
+    const r = await window.storage.get(STORAGE_KEY);
+    if(r && r.value){
+      const parsed = JSON.parse(r.value);
+      state.userWords = parsed.userWords || {};
+      state.customTexts = parsed.customTexts || [];
+      state.readTextIds = parsed.readTextIds || [];
+    }
+  }catch(e){
+    // ключа пока нет — используем значения по умолчанию
+  }
+}
+function saveState(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async ()=>{
+    try{ await window.storage.set(STORAGE_KEY, JSON.stringify(state)); }
+    catch(e){ console.error("Storage error", e); }
+  }, 250);
+}
+
+/* ============================================================
+   ПОИСК СЛОВА В СЛОВАРЕ (с разбором форм)
+   ============================================================ */
+function candidatesFor(w){
+  const out = [];
+  if(w.endsWith("ies") && w.length>3) out.push(w.slice(0,-3)+"y");
+  if(w.endsWith("oes") && w.length>3) out.push(w.slice(0,-2));
+  if((w.endsWith("ses")||w.endsWith("xes")||w.endsWith("zes")||w.endsWith("ches")||w.endsWith("shes")) && w.length>4){
+    out.push(w.slice(0,-2));
+  }
+  if(w.endsWith("s") && !w.endsWith("ss") && w.length>3) out.push(w.slice(0,-1));
+  if(w.endsWith("ing") && w.length>4){
+    const base = w.slice(0,-3);
+    out.push(base+"e", base);
+    if(base.length>=2 && base[base.length-1]===base[base.length-2] && !/[aeiou]/.test(base[base.length-1])){
+      out.push(base.slice(0,-1));
+    }
+  }
+  if(w.endsWith("ed") && w.length>3){
+    const b1 = w.slice(0,-2);
+    const b2 = w.slice(0,-1);
+    out.push(b2, b1);
+    if(b1.length>=2 && b1[b1.length-1]===b1[b1.length-2] && !/[aeiou]/.test(b1[b1.length-1])){
+      out.push(b1.slice(0,-1));
+    }
+  }
+  if(w.endsWith("er") && w.length>4) out.push(w.slice(0,-2));
+  if(w.endsWith("est") && w.length>5) out.push(w.slice(0,-3));
+  return out;
+}
+
+function lookupWord(token){
+  const w = token.toLowerCase();
+  if(state.userWords[w]) return {key:w, translation:state.userWords[w].translation};
+  if(BASE_DICT.hasOwnProperty(w)) return {key:w, translation:BASE_DICT[w]};
+  if(IRREGULAR.hasOwnProperty(w)){
+    const base = IRREGULAR[w];
+    if(state.userWords[base]) return {key:base, translation:state.userWords[base].translation};
+    if(BASE_DICT.hasOwnProperty(base)) return {key:base, translation:BASE_DICT[base]};
+  }
+  for(const c of candidatesFor(w)){
+    let cc = c;
+    if(IRREGULAR.hasOwnProperty(cc)) cc = IRREGULAR[cc];
+    if(state.userWords[cc]) return {key:cc, translation:state.userWords[cc].translation};
+    if(BASE_DICT.hasOwnProperty(cc)) return {key:cc, translation:BASE_DICT[cc]};
+  }
+  return null;
+}
+
+/* ============================================================
+   РЕНДЕР ТЕКСТА С КЛИКАБЕЛЬНЫМИ СЛОВАМИ
+   ============================================================ */
+function escapeHtml(s){
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+const WORD_RE = /[A-Za-z]+(?:'[A-Za-z]+)?/g;
+
+function wordSpan(token){
+  const info = lookupWord(token);
+  const key = info ? info.key : token.toLowerCase();
+  let cls = "word";
+  if(info){
+    cls += " w-hit";
+    const uw = state.userWords[key];
+    if(uw){ cls += uw.status === "known" ? " w-known" : " w-learning"; }
+  }
+  return `<span class="${cls}" tabindex="0" role="button" data-token="${escapeHtml(token)}">${escapeHtml(token)}</span>`;
+}
+function buildLineHtml(line){
+  let html = "";
+  let lastIndex = 0;
+  let m;
+  WORD_RE.lastIndex = 0;
+  while((m = WORD_RE.exec(line))){
+    html += escapeHtml(line.slice(lastIndex, m.index));
+    html += wordSpan(m[0]);
+    lastIndex = WORD_RE.lastIndex;
+  }
+  html += escapeHtml(line.slice(lastIndex));
+  return html;
+}
+function renderReaderBody(text){
+  return text.split(/\n+/).filter(p=>p.trim().length).map(p=>`<p>${buildLineHtml(p.trim())}</p>`).join("");
+}
+function wordCount(text){
+  return (text.match(WORD_RE) || []).length;
+}
+
+/* ============================================================
+   ВИДЫ (VIEWS) И НАВИГАЦИЯ
+   ============================================================ */
+function showView(name){
+  document.querySelectorAll(".view").forEach(v=>v.classList.add("hidden"));
+  const target = document.querySelector(`.view[data-view="${name}"]`);
+  if(target) target.classList.remove("hidden");
+  document.querySelectorAll(".nav button[data-view]").forEach(b=>{
+    b.classList.toggle("active", b.dataset.view===name);
+  });
+  hideTooltip();
+  window.scrollTo({top:0, behavior:"auto"});
+}
+
+/* ============================================================
+   СТАТИСТИКА
+   ============================================================ */
+function updateStatsUI(){
+  const vals = Object.values(state.userWords);
+  const learning = vals.filter(v=>v.status==="learning").length;
+  const known = vals.filter(v=>v.status==="known").length;
+  document.getElementById("statLearning").textContent = learning;
+  document.getElementById("statKnown").textContent = known;
+  document.getElementById("statLearningCount").textContent = learning;
+  document.getElementById("statKnownCount").textContent = known;
+  document.getElementById("statTextsCount").textContent = state.readTextIds.length;
+}
+
+/* ============================================================
+   БИБЛИОТЕКА ТЕКСТОВ
+   ============================================================ */
+function allTexts(){
+  return TEXTS.concat(state.customTexts);
+}
+function levelDotsHtml(level){
+  const n = LEVEL_DOTS[level] || 0;
+  let dots = "";
+  for(let i=1;i<=3;i++) dots += `<span class="dot ${i<=n?'on':''}"></span>`;
+  return dots;
+}
+function renderLibrary(){
+  const grid = document.getElementById("libraryGrid");
+  let html = "";
+  TEXTS.forEach(t=>{
+    html += `
+    <div class="text-card" data-id="${t.id}" data-kind="built-in">
+      <div class="level">${levelDotsHtml(t.level)}<span>${LEVEL_LABEL[t.level]}</span></div>
+      <h3>${escapeHtml(t.title)}</h3>
+      <p class="teaser">${escapeHtml(t.teaser)}</p>
+      <div class="row">
+        <span class="meta">${wordCount(t.body)} слов</span>
+        <button class="go" data-open="${t.id}">Читать →</button>
+      </div>
+    </div>`;
+  });
+  state.customTexts.forEach(t=>{
+    html += `
+    <div class="text-card" data-id="${t.id}" data-kind="custom">
+      <div class="level">${levelDotsHtml("custom")}<span>${LEVEL_LABEL.custom}</span></div>
+      <h3>${escapeHtml(t.title)}</h3>
+      <p class="teaser">${escapeHtml(t.teaser || "Текст, который вы добавили сами.")}</p>
+      <div class="row">
+        <span class="meta">${wordCount(t.body)} слов</span>
+        <span style="display:flex;gap:10px;">
+          <button class="del" data-del="${t.id}">Удалить</button>
+          <button class="go" data-open="${t.id}">Читать →</button>
+        </span>
+      </div>
+    </div>`;
+  });
+  html += `
+    <div class="text-card add-own" id="addOwnCard">
+      <div>
+        <div style="font-size:28px;margin-bottom:6px;">＋</div>
+        <button id="addOwnBtn">Добавить свой текст</button>
+      </div>
+    </div>`;
+  grid.innerHTML = html;
+
+  grid.querySelectorAll("[data-open]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const id = btn.dataset.open;
+      const t = allTexts().find(x=>x.id===id);
+      if(t) openText(t);
+    });
+  });
+  grid.querySelectorAll("[data-del]").forEach(btn=>{
+    btn.addEventListener("click", (e)=>{
+      e.stopPropagation();
+      const id = btn.dataset.del;
+      state.customTexts = state.customTexts.filter(x=>x.id!==id);
+      saveState();
+      renderLibrary();
+    });
+  });
+  document.getElementById("addOwnBtn").addEventListener("click", toggleCustomForm);
+}
+
+function toggleCustomForm(){
+  const wrap = document.getElementById("customFormWrap");
+  if(!wrap.classList.contains("hidden")){
+    wrap.classList.add("hidden");
+    wrap.innerHTML = "";
+    return;
+  }
+  wrap.classList.remove("hidden");
+  wrap.innerHTML = `
+    <div class="custom-form">
+      <label for="customTitle">Название текста</label>
+      <input id="customTitle" type="text" placeholder="Например: Статья из блога">
+      <label for="customBody">Текст на английском</label>
+      <textarea id="customBody" placeholder="Вставьте сюда любой английский текст…"></textarea>
+      <div class="actions">
+        <button class="btn" id="customSubmit">Начать чтение</button>
+        <button class="btn secondary" id="customCancel">Отмена</button>
+      </div>
+    </div>`;
+  document.getElementById("customCancel").addEventListener("click", toggleCustomForm);
+  document.getElementById("customSubmit").addEventListener("click", ()=>{
+    const title = document.getElementById("customTitle").value.trim() || "Мой текст";
+    const body = document.getElementById("customBody").value.trim();
+    if(!body){
+      document.getElementById("customBody").focus();
+      return;
+    }
+    const obj = {
+      id: "custom-" + Date.now(),
+      title, level:"custom", teaser:"",
+      body
+    };
+    state.customTexts.unshift(obj);
+    if(state.customTexts.length > 10) state.customTexts.length = 10;
+    saveState();
+    toggleCustomForm();
+    renderLibrary();
+    openText(obj);
+  });
+  wrap.scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+/* ============================================================
+   ЧТЕНИЕ ТЕКСТА
+   ============================================================ */
+function openText(text){
+  currentText = text;
+  if(!state.readTextIds.includes(text.id)){
+    state.readTextIds.push(text.id);
+    saveState();
+  }
+  document.getElementById("navReader").classList.remove("hidden");
+  document.getElementById("navReader").textContent = "Чтение";
+  document.getElementById("readerTitle").textContent = text.title;
+  renderReaderContent();
+  updateStatsUI();
+  showView("reader");
+}
+function renderReaderContent(){
+  if(!currentText) return;
+  document.getElementById("readerBody").innerHTML = renderReaderBody(currentText.body);
+  updateReaderProgress();
+}
+function updateReaderProgress(){
+  if(!currentText) return;
+  const tokens = currentText.body.match(WORD_RE) || [];
+  const keys = new Set();
+  tokens.forEach(t=>{
+    const info = lookupWord(t);
+    if(info) keys.add(info.key);
+  });
+  let known = 0;
+  keys.forEach(k=>{
+    if(state.userWords[k] && state.userWords[k].status==="known") known++;
+  });
+  document.getElementById("readerProgress").textContent =
+    keys.size ? `Изучено ${known} из ${keys.size} слов в этом тексте` : "";
+}
+
+/* ============================================================
+   ПОДСКАЗКА (TOOLTIP) ПРИ КЛИКЕ НА СЛОВО
+   ============================================================ */
+function hideTooltip(){
+  document.getElementById("tooltipLayer").innerHTML = "";
+}
+function refreshWordVisuals(){
+  if(currentText) renderReaderContent();
+  renderDemoSentence();
+  const dictView = document.querySelector('.view[data-view="dictionary"]');
+  if(dictView && !dictView.classList.contains("hidden")) renderDictionary();
+}
+function addWord(key, translation, status){
+  const prev = state.userWords[key];
+  state.userWords[key] = {
+    translation,
+    status,
+    addedAt: prev ? prev.addedAt : Date.now(),
+    source: BASE_DICT.hasOwnProperty(key) ? "built-in" : "custom"
+  };
+  saveState();
+  refreshWordVisuals();
+  updateStatsUI();
+}
+function setStatus(key, status){
+  if(state.userWords[key]){
+    state.userWords[key].status = status;
+    saveState();
+    refreshWordVisuals();
+    updateStatsUI();
+  }
+}
+function removeWord(key){
+  delete state.userWords[key];
+  saveState();
+  refreshWordVisuals();
+  updateStatsUI();
+}
+
+function showTooltip(el, token){
+  const info = lookupWord(token);
+  const key = info ? info.key : token.toLowerCase();
+  const existing = state.userWords[key];
+  const layer = document.getElementById("tooltipLayer");
+
+  let inner = `<button class="tt-close" id="ttClose" aria-label="Закрыть">✕</button>`;
+  inner += `<div class="tt-word">${escapeHtml(token)}</div>`;
+  if(info && info.key !== token.toLowerCase()){
+    inner += `<div class="tt-lemma">словарная форма: ${escapeHtml(info.key)}</div>`;
+  }
+
+  if(info){
+    inner += `<div class="tt-translation">${escapeHtml(info.translation)}</div>`;
+    if(!existing){
+      inner += `<div class="tt-actions">
+        <button class="primary" id="ttAddLearning">+ В изучение</button>
+        <button id="ttAddKnown">Уже знаю</button>
+      </div>`;
+    } else if(existing.status === "learning"){
+      inner += `<div class="tt-status">Статус: в изучении</div>
+      <div class="tt-actions">
+        <button id="ttMarkKnown">Отметить как изучено</button>
+        <button class="danger" id="ttRemove">Убрать из словаря</button>
+      </div>`;
+    } else {
+      inner += `<div class="tt-status">Статус: изучено</div>
+      <div class="tt-actions">
+        <button id="ttMarkLearning">Вернуть в изучение</button>
+        <button class="danger" id="ttRemove">Убрать из словаря</button>
+      </div>`;
+    }
+  } else {
+    inner += `<div class="tt-hint">Этого слова нет в словаре. Добавьте свой перевод:</div>
+      <input class="tt-input" id="ttInput" type="text" placeholder="Например: красивый">
+      <div class="tt-actions">
+        <button class="primary" id="ttSaveCustom">Сохранить</button>
+      </div>`;
+  }
+
+  layer.innerHTML = `<div class="tooltip" id="ttBox">${inner}</div>`;
+
+  const box = document.getElementById("ttBox");
+  const rect = el.getBoundingClientRect();
+  const top = window.scrollY + rect.bottom + 8;
+  let left = window.scrollX + rect.left;
+  const maxLeft = window.scrollX + document.documentElement.clientWidth - 296;
+  if(left > maxLeft) left = Math.max(8, maxLeft);
+  box.style.top = top + "px";
+  box.style.left = left + "px";
+
+  document.getElementById("ttClose").addEventListener("click", hideTooltip);
+  const addLearning = document.getElementById("ttAddLearning");
+  if(addLearning) addLearning.addEventListener("click", ()=>addWord(key, info.translation, "learning"));
+  const addKnown = document.getElementById("ttAddKnown");
+  if(addKnown) addKnown.addEventListener("click", ()=>addWord(key, info.translation, "known"));
+  const markKnown = document.getElementById("ttMarkKnown");
+  if(markKnown) markKnown.addEventListener("click", ()=>setStatus(key, "known"));
+  const markLearning = document.getElementById("ttMarkLearning");
+  if(markLearning) markLearning.addEventListener("click", ()=>setStatus(key, "learning"));
+  const removeBtn = document.getElementById("ttRemove");
+  if(removeBtn) removeBtn.addEventListener("click", ()=>removeWord(key));
+  const saveCustom = document.getElementById("ttSaveCustom");
+  if(saveCustom){
+    const input = document.getElementById("ttInput");
+    input.focus();
+    const submit = ()=>{
+      const val = input.value.trim();
+      if(val) addWord(key, val, "learning");
+    };
+    saveCustom.addEventListener("click", submit);
+    input.addEventListener("keydown", (e)=>{ if(e.key==="Enter") submit(); });
+  }
+}
+
+/* ============================================================
+   ГЛАВНАЯ — ИНТЕРАКТИВНОЕ ДЕМО
+   ============================================================ */
+const DEMO_SENTENCE = "A curious fox can read English texts and learn new words every day.";
+function renderDemoSentence(){
+  document.getElementById("demoSentence").innerHTML = buildLineHtml(DEMO_SENTENCE);
+}
+
+/* ============================================================
+   МОЙ СЛОВАРЬ
+   ============================================================ */
+function renderDictionary(){
+  const content = document.getElementById("dictContent");
+  let entries = Object.entries(state.userWords);
+  if(currentFilter !== "all") entries = entries.filter(([,v])=>v.status===currentFilter);
+  entries.sort((a,b)=>b[1].addedAt - a[1].addedAt);
+
+  if(entries.length === 0){
+    content.innerHTML = `<div class="empty-state">
+      ${currentFilter==="all"
+        ? "Словарь пока пуст. Откройте текст и нажимайте на слова, чтобы добавлять их сюда."
+        : "Здесь пока ничего нет для этого фильтра."}
+      <br><button class="btn" id="dictGoRead">Перейти к текстам</button>
+    </div>`;
+    const goRead = document.getElementById("dictGoRead");
+    if(goRead) goRead.addEventListener("click", ()=>showView("home"));
+    return;
+  }
+
+  content.innerHTML = `<div class="dict-grid">${entries.map(([key,v])=>`
+    <div class="dict-chip" data-key="${escapeHtml(key)}">
+      <div class="w">${escapeHtml(key)}</div>
+      <div class="t">${escapeHtml(v.translation)}</div>
+      <span class="badge ${v.status}">${v.status==="known" ? "изучено" : "в изучении"}</span>
+      <div class="chip-actions">
+        ${v.status==="known"
+          ? `<button data-act="learning">В изучение</button>`
+          : `<button data-act="known">Изучено</button>`}
+        <button data-act="remove">Удалить</button>
+      </div>
+    </div>`).join("")}</div>`;
+
+  content.querySelectorAll(".dict-chip").forEach(chip=>{
+    const key = chip.dataset.key;
+    chip.querySelectorAll("button").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        if(btn.dataset.act === "remove") removeWord(key);
+        else setStatus(key, btn.dataset.act);
+        renderDictionary();
+      });
+    });
+  });
+}
+
+/* ============================================================
+   ТРЕНИРОВКА (ФЛЕШ-КАРТОЧКИ)
+   ============================================================ */
+function shuffle(arr){
+  for(let i=arr.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]] = [arr[j],arr[i]];
+  }
+  return arr;
+}
+function buildPracticeQueue(){
+  practiceQueue = shuffle(Object.entries(state.userWords)
+    .filter(([,v])=>v.status==="learning")
+    .map(([k,v])=>({key:k, translation:v.translation, streak:0})));
+  practiceIndex = 0;
+  practiceRevealed = false;
+}
+function renderPractice(){
+  const content = document.getElementById("practiceContent");
+  if(practiceQueue.length === 0){
+    content.innerHTML = `<div class="empty-state">
+      Нет слов для тренировки. Сначала откройте текст и добавьте слова в раздел «В изучении».
+      <br><button class="btn" id="practiceGoRead">Перейти к текстам</button>
+    </div>`;
+    const goRead = document.getElementById("practiceGoRead");
+    if(goRead) goRead.addEventListener("click", ()=>showView("home"));
+    return;
+  }
+  const item = practiceQueue[practiceIndex];
+  content.innerHTML = `
+    <div class="practice-wrap">
+      <div class="flip-card" id="flipCard">
+        <div>${escapeHtml(item.key)}</div>
+        ${practiceRevealed ? `<div class="translation">${escapeHtml(item.translation)}</div>` : ""}
+      </div>
+      <div class="practice-actions">
+        ${practiceRevealed
+          ? `<button class="btn" id="pRemember">Помню</button><button class="btn secondary" id="pForgot">Забыл</button>`
+          : `<button class="btn" id="pReveal">Показать перевод</button>`}
+      </div>
+      <div class="practice-progress">Осталось карточек: ${practiceQueue.length}</div>
+    </div>`;
+
+  const reveal = document.getElementById("pReveal");
+  if(reveal) reveal.addEventListener("click", ()=>{ practiceRevealed = true; renderPractice(); });
+  const remember = document.getElementById("pRemember");
+  if(remember) remember.addEventListener("click", ()=>{
+    item.streak++;
+    if(item.streak >= 3){
+      setStatus(item.key, "known");
+      practiceQueue.splice(practiceIndex,1);
+    } else {
+      practiceQueue.push(practiceQueue.splice(practiceIndex,1)[0]);
+    }
+    afterPracticeStep();
+  });
+  const forgot = document.getElementById("pForgot");
+  if(forgot) forgot.addEventListener("click", ()=>{
+    item.streak = 0;
+    practiceQueue.push(practiceQueue.splice(practiceIndex,1)[0]);
+    afterPracticeStep();
+  });
+}
+function afterPracticeStep(){
+  practiceRevealed = false;
+  if(practiceIndex >= practiceQueue.length) practiceIndex = 0;
+  renderPractice();
+}
+
+/* ============================================================
+   ИНИЦИАЛИЗАЦИЯ
+   ============================================================ */
+function wireGlobalEvents(){
+  document.querySelectorAll(".nav button[data-view]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const view = btn.dataset.view;
+      if(view === "reader" && !currentText) return;
+      showView(view);
+      if(view === "dictionary") renderDictionary();
+      if(view === "practice"){ buildPracticeQueue(); renderPractice(); }
+    });
+  });
+
+  document.getElementById("readerBack").addEventListener("click", ()=>showView("home"));
+  document.getElementById("heroStart").addEventListener("click", ()=>{
+    document.getElementById("libraryGrid").scrollIntoView({behavior:"smooth", block:"start"});
+  });
+
+  document.querySelectorAll(".dict-tabs button").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      currentFilter = btn.dataset.filter;
+      document.querySelectorAll(".dict-tabs button").forEach(b=>b.classList.toggle("active", b===btn));
+      renderDictionary();
+    });
+  });
+
+  document.addEventListener("click", (e)=>{
+    const wordEl = e.target.closest(".word");
+    if(wordEl){
+      showTooltip(wordEl, wordEl.dataset.token);
+      return;
+    }
+    if(!e.target.closest("#tooltipLayer")) hideTooltip();
+  });
+  document.addEventListener("keydown", (e)=>{
+    if(e.key === "Escape"){ hideTooltip(); return; }
+    if((e.key === "Enter" || e.key === " ") && e.target.classList.contains("word")){
+      e.preventDefault();
+      showTooltip(e.target, e.target.dataset.token);
+    }
+  });
+}
+
+async function init(){
+  await loadState();
+  renderLibrary();
+  renderDemoSentence();
+  updateStatsUI();
+  wireGlobalEvents();
+}
+init();
+
+})();
+</script>
+</body>
+</html>
