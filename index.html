@@ -123,10 +123,22 @@ main{max-width:980px;margin:0 auto;padding:32px 24px 90px;}
 
 /* ---------- Tooltip ---------- */
 .tooltip{position:absolute;z-index:50;background:#fff;border:1px solid var(--line);border-top:3px solid var(--amber);
-  border-radius:8px;box-shadow:0 8px 24px rgba(30,42,34,0.18);padding:14px;min-width:220px;max-width:280px;font-size:14px;}
-.tooltip .tt-word{font-family:'PT Serif',serif;font-size:18px;margin-bottom:2px;}
+  border-radius:8px;box-shadow:0 8px 24px rgba(30,42,34,0.18);padding:14px;min-width:240px;max-width:320px;font-size:14px;}
+.tooltip .tt-word-row{display:flex;align-items:baseline;gap:8px;margin-bottom:2px;}
+.tooltip .tt-word{font-family:'PT Serif',serif;font-size:18px;}
+.tooltip .tt-speak{background:var(--amber-soft2);border:1px solid var(--line);border-radius:999px;width:26px;height:26px;
+  display:inline-flex;align-items:center;justify-content:center;font-size:13px;padding:0;color:var(--ink-soft);flex:none;}
+.tooltip .tt-speak:hover{background:var(--amber-soft);}
 .tooltip .tt-lemma{font-size:12px;color:var(--ink-soft);margin-bottom:8px;}
 .tooltip .tt-translation{font-size:16px;color:var(--fern-dark);font-weight:700;margin-bottom:10px;}
+.tooltip .tt-freq{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12px;color:var(--ink-soft);}
+.tooltip .freq-bars{display:inline-flex;align-items:flex-end;gap:2px;height:14px;flex:none;}
+.tooltip .fbar{width:4px;background:var(--line);border-radius:1px;}
+.tooltip .fbar.h1{height:5px;} .tooltip .fbar.h2{height:8px;} .tooltip .fbar.h3{height:11px;} .tooltip .fbar.h4{height:14px;}
+.tooltip .fbar.on{background:var(--fern);}
+.tooltip .tt-context{font-size:13px;color:var(--ink-soft);font-style:italic;line-height:1.45;margin-bottom:10px;
+  border-left:2px solid var(--line);padding-left:8px;}
+.tooltip .tt-context mark{background:var(--amber-soft);color:var(--ink);font-style:normal;font-weight:700;padding:0 2px;border-radius:2px;}
 .tooltip .tt-status{font-size:12px;color:var(--ink-soft);margin-bottom:8px;}
 .tooltip .tt-actions{display:flex;gap:6px;flex-wrap:wrap;}
 .tooltip .tt-actions button{font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--paper);}
@@ -146,6 +158,8 @@ main{max-width:980px;margin:0 auto;padding:32px 24px 90px;}
 .dict-chip{background:var(--paper-card);border:1px solid var(--line);border-radius:8px;padding:12px;}
 .dict-chip .w{font-family:'PT Serif',serif;font-size:17px;}
 .dict-chip .t{color:var(--ink-soft);font-size:14px;margin:2px 0 8px;}
+.dict-chip .ex{font-size:12px;color:var(--ink-soft);font-style:italic;margin-bottom:8px;line-height:1.4;}
+.dict-chip .ex mark{background:var(--amber-soft);font-style:normal;font-weight:700;border-radius:2px;}
 .dict-chip .badge{font-size:11px;padding:2px 8px;border-radius:999px;display:inline-block;}
 .badge.learning{background:var(--amber-soft);color:#7A4F12;}
 .badge.known{background:#DCEADD;color:var(--fern-dark);}
@@ -159,10 +173,19 @@ main{max-width:980px;margin:0 auto;padding:32px 24px 90px;}
 .flip-card{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:50px 24px;box-shadow:var(--shadow);
   min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-family:'PT Serif',serif;font-size:28px;margin-bottom:18px;}
 .flip-card .translation{color:var(--fern-dark);font-size:22px;}
+.flip-card .example{font-size:13px;color:var(--ink-soft);font-style:italic;line-height:1.4;max-width:340px;}
+.flip-card .example mark{background:var(--amber-soft);font-style:normal;font-weight:700;border-radius:2px;}
 .practice-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
 .practice-progress{margin-top:14px;font-size:13px;color:var(--ink-soft);}
 
 footer{text-align:center;padding:24px;color:var(--ink-soft);font-size:13px;border-top:1px solid var(--line);}
+
+/* ---------- Toast ---------- */
+#toastLayer{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:80;display:flex;flex-direction:column;gap:8px;align-items:center;}
+.toast{background:var(--fern-dark);color:#fff;padding:10px 18px;border-radius:8px;font-size:14px;box-shadow:0 6px 18px rgba(30,42,34,0.25);
+  opacity:1;transition:opacity .3s, transform .3s;}
+.toast.error{background:var(--rust);}
+.toast.out{opacity:0;transform:translateY(6px);}
 
 @media (prefers-reduced-motion:reduce){*{transition:none !important;}}
 </style>
@@ -250,6 +273,7 @@ footer{text-align:center;padding:24px;color:var(--ink-soft);font-size:13px;borde
 <footer>ReadFox — учебный проект для интерактивного чтения на английском языке.</footer>
 
 <div id="tooltipLayer"></div>
+<div id="toastLayer"></div>
 
 <script>
 (function(){
@@ -329,7 +353,7 @@ const BASE_DICT = {
   "itself":"само","ourselves":"себя (мы сами)","yourselves":"себя (вы сами)","themselves":"себя (они сами)",
   "this":"этот, это","that":"тот, то","these":"эти","those":"те",
   "who":"кто","whom":"кого, кому","whose":"чей","which":"который, какой","what":"что, какой",
-  "when":"когда","where":"где, куда","first":"первый, сначала","not":"не",
+  "when":"когда","where":"где, куда","how":"как","first":"первый, сначала","not":"не",
   "someone":"кто-то","somebody":"кто-то","something":"что-то","somewhere":"где-то, куда-то",
   "anyone":"кто-нибудь","anybody":"кто-нибудь","anything":"что-нибудь","anywhere":"где-нибудь",
   "everyone":"каждый, все","everybody":"все","everything":"всё","everywhere":"везде",
@@ -390,7 +414,7 @@ const BASE_DICT = {
   "one":"один","two":"два","three":"три","four":"четыре","five":"пять",
   "six":"шесть","seven":"семь","eight":"восемь","nine":"девять","ten":"десять",
   "eleven":"одиннадцать","twelve":"двенадцать","twenty":"двадцать","thirty":"тридцать",
-  "forty":"сорок","fifty":"пятьдесят","hundred":"сто","thousand":"тысяча",
+  "forty":"сорок","fifty":"пятьдесят","hundred":"сто","thousand":"тысяча","number":"число, номер",
   // дни недели
   "monday":"понедельник","tuesday":"вторник","wednesday":"среда","thursday":"четверг",
   "friday":"пятница","saturday":"суббота","sunday":"воскресенье",
@@ -606,6 +630,65 @@ const IRREGULAR = {
 };
 
 /* ============================================================
+   ПРИМЕРНАЯ ЧАСТОТНОСТЬ СЛОВ (грубая оценка по 4 уровням)
+   Это не точная статистика, а приближённая прикидка «на глаз»:
+   функциональные слова и базовая лексика — самые частые,
+   книжная/узкая лексика из басни про лису — самая редкая,
+   остальное — где-то по середине.
+   ============================================================ */
+const FREQ_TOP = new Set([
+  "i","you","he","she","it","we","they","me","him","her","us","them","my","your","his","its","our","their",
+  "a","an","the","this","that","these","those","some","any","every","each","all","other","another",
+  "in","on","at","by","for","with","about","to","from","up","down","off","over","under","of","out","near",
+  "and","but","or","so","yet","because","if","as","than",
+  "be","have","do","will","would","can","could","may","might","must","should","shall",
+  "not","no","yes","who","what","which","when","where","how","why",
+  "go","get","make","take","see","know","think","come","give","find","want","use","work","say","look","ask","need","feel","try","call","tell",
+  "day","time","way","year","man","woman","people","thing","life","world","hand","place","word","water",
+  "good","bad","big","small","new","old","first","long","right","here","there","now","then",
+  "very","more","most","much","many","just","only","also","one","two"
+]);
+const FREQ_COMMON = new Set([
+  "house","home","school","food","friend","family","father","mother","sister","brother","child","baby",
+  "money","book","music","color","weather","morning","evening","night","week","month","city","town",
+  "street","room","door","window","table","chair","bed","car","bus","phone","letter","message",
+  "walk","run","play","eat","drink","sleep","read","write","buy","sell","help","start","stop","open","close",
+  "love","like","believe","remember","forget","understand","learn","teach","explain","decide","agree",
+  "continue","change","move","turn","leave","arrive","stay","wait","talk","speak","listen","watch","show",
+  "bring","send","receive","follow","lead","build","create","break","fix","clean","wash","cook","grow",
+  "happy","sad","angry","tired","hungry","hot","cold","easy","hard","important","different","same",
+  "free","busy","ready","sure","safe","dangerous","strong","weak","young","beautiful","nice","kind",
+  "quiet","loud","clean","cheap","expensive","fast","slow","early","late","high","low","heavy","light",
+  "full","empty","check","plan","piece","fruit","bread","egg","tea","coffee","breakfast","lunch","dinner",
+  "park","tree","grass","sun","sky","rain","snow","wind","dog","cat","bird","fish","animal",
+  "country","road","path","river","sea","mountain","forest","village","shop","store","market","price",
+  "business","company","job","work","office","computer","internet","phone","email","video","photo",
+  "doctor","teacher","student","worker","police","government","country","war","peace","law",
+  "body","head","face","eye","ear","hand","arm","leg","foot","heart","health","pain",
+  "sound","voice","color","shape","size","number","question","answer","problem","reason","idea",
+  "true","false","public","private","social","important","possible","necessary","clear","strange",
+  "guide","order","secret","stranger","owner","customer","product","service","education","technology",
+  "skill","experience","knowledge","memory","dream","hope","fear","anger","joy","surprise","worry"
+]);
+const FREQ_RARE = new Set([
+  "cleverness","astonishment","sympathy","territory","encounter","wisdom","repay","kindness","helpless",
+  "desperate","confidently","memorize","wander","glow","dawn","shallow","distant","merely","unlike",
+  "entire","truly","fur","claw","paw","oak","bush","wept","wisdom","beneath","cleverness","curiosity",
+  "elderly","astonishment","situation","condition","instead","whatever","whichever","whomever",
+  "predict","fully","shape","spend","screen","expert","skill","losing","replacing","truth","certain",
+  "shrink","expand","hesitate","pause","relief","disappear","wonder","grind","narrow","wooden","shelf",
+  "background","stranger","conversation","familiar","warmer","completely","businesses","connection",
+  "lecture","famous","university","whatever","cannot","predict","yet","unlike","gold","kindness"
+]);
+
+function frequencyInfo(key){
+  if(FREQ_TOP.has(key)) return {tier:1, bars:4, label:"Одно из самых частых слов в английском"};
+  if(FREQ_COMMON.has(key)) return {tier:2, bars:3, label:"Частое, повседневное слово"};
+  if(FREQ_RARE.has(key)) return {tier:4, bars:1, label:"Редкое или специализированное слово"};
+  return {tier:3, bars:2, label:"Встречается умеренно часто"};
+}
+
+/* ============================================================
    СОСТОЯНИЕ И ХРАНИЛИЩЕ
    ============================================================ */
 const STORAGE_KEY = "readfox-state";
@@ -619,7 +702,7 @@ let saveTimer = null;
 
 async function loadState(){
   try{
-    const r = await window.storage.get(STORAGE_KEY);
+    const r = await window.storage.get(STORAGE_KEY, false);
     if(r && r.value){
       const parsed = JSON.parse(r.value);
       state.userWords = parsed.userWords || {};
@@ -627,15 +710,45 @@ async function loadState(){
       state.readTextIds = parsed.readTextIds || [];
     }
   }catch(e){
-    // ключа пока нет — используем значения по умолчанию
+    // ключа пока нет в хранилище — используем значения по умолчанию
   }
 }
+
+function showToast(message, isError){
+  const layer = document.getElementById("toastLayer");
+  const el = document.createElement("div");
+  el.className = "toast" + (isError ? " error" : "");
+  el.textContent = message;
+  layer.appendChild(el);
+  setTimeout(()=>{ el.classList.add("out"); setTimeout(()=>el.remove(), 300); }, 2200);
+}
+
+// Сохраняет состояние немедленно, с одной повторной попыткой при сбое.
+// Возвращает true/false — пригодилось для discreet-действий (добавление текста),
+// где важно явно знать, прошло ли сохранение.
+async function persistState(){
+  const payload = JSON.stringify(state);
+  for(let attempt=0; attempt<2; attempt++){
+    try{
+      const result = await window.storage.set(STORAGE_KEY, payload, false);
+      if(result) return true;
+    }catch(e){
+      console.error("Ошибка сохранения ReadFox (попытка " + (attempt+1) + "):", e);
+    }
+  }
+  return false;
+}
+
+// Debounced-версия для частых, мелких изменений (например, клики по словам подряд).
 function saveState(){
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(async ()=>{
-    try{ await window.storage.set(STORAGE_KEY, JSON.stringify(state)); }
-    catch(e){ console.error("Storage error", e); }
-  }, 250);
+  saveTimer = setTimeout(()=>{ persistState(); }, 250);
+}
+
+// Немедленная версия для редких, важных действий (добавление/удаление своего текста).
+async function saveStateNow(){
+  clearTimeout(saveTimer);
+  return await persistState();
 }
 
 /* ============================================================
@@ -688,14 +801,29 @@ function lookupWord(token){
 }
 
 /* ============================================================
-   РЕНДЕР ТЕКСТА С КЛИКАБЕЛЬНЫМИ СЛОВАМИ
+   РЕНДЕР ТЕКСТА С КЛИКАБЕЛЬНЫМИ СЛОВАМИ И КОНТЕКСТОМ
    ============================================================ */
 function escapeHtml(s){
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
 const WORD_RE = /[A-Za-z]+(?:'[A-Za-z]+)?/g;
 
-function wordSpan(token){
+// Сюда складываются предложения текущего текста, чтобы по индексу
+// можно было достать «контекст» для всплывающей подсказки.
+let readerSentences = [];
+
+function splitSentences(text){
+  const out = [];
+  const re = /[^.!?]*[.!?]+\s*|[^.!?]+$/g;
+  let m;
+  while((m = re.exec(text))){
+    if(m[0].length === 0){ re.lastIndex++; continue; }
+    out.push(m[0]);
+  }
+  return out.length ? out : [text];
+}
+
+function wordSpan(token, sIdx){
   const info = lookupWord(token);
   const key = info ? info.key : token.toLowerCase();
   let cls = "word";
@@ -704,23 +832,38 @@ function wordSpan(token){
     const uw = state.userWords[key];
     if(uw){ cls += uw.status === "known" ? " w-known" : " w-learning"; }
   }
-  return `<span class="${cls}" tabindex="0" role="button" data-token="${escapeHtml(token)}">${escapeHtml(token)}</span>`;
+  const sidxAttr = (sIdx !== undefined && sIdx !== null) ? ` data-sidx="${sIdx}"` : "";
+  return `<span class="${cls}" tabindex="0" role="button" data-token="${escapeHtml(token)}"${sidxAttr}>${escapeHtml(token)}</span>`;
 }
-function buildLineHtml(line){
+function buildSentenceHtml(sentence, sIdx){
   let html = "";
   let lastIndex = 0;
   let m;
   WORD_RE.lastIndex = 0;
-  while((m = WORD_RE.exec(line))){
-    html += escapeHtml(line.slice(lastIndex, m.index));
-    html += wordSpan(m[0]);
+  while((m = WORD_RE.exec(sentence))){
+    html += escapeHtml(sentence.slice(lastIndex, m.index));
+    html += wordSpan(m[0], sIdx);
     lastIndex = WORD_RE.lastIndex;
   }
-  html += escapeHtml(line.slice(lastIndex));
+  html += escapeHtml(sentence.slice(lastIndex));
+  return html;
+}
+// withContext=true пополняет readerSentences и проставляет каждому слову
+// data-sidx, чтобы потом можно было показать предложение-контекст.
+function buildLineHtml(line, withContext){
+  if(!withContext){
+    return buildSentenceHtml(line, null);
+  }
+  let html = "";
+  for(const sentence of splitSentences(line)){
+    readerSentences.push(sentence.trim());
+    html += buildSentenceHtml(sentence, readerSentences.length - 1);
+  }
   return html;
 }
 function renderReaderBody(text){
-  return text.split(/\n+/).filter(p=>p.trim().length).map(p=>`<p>${buildLineHtml(p.trim())}</p>`).join("");
+  readerSentences = [];
+  return text.split(/\n+/).filter(p=>p.trim().length).map(p=>`<p>${buildLineHtml(p.trim(), true)}</p>`).join("");
 }
 function wordCount(text){
   return (text.match(WORD_RE) || []).length;
@@ -813,12 +956,13 @@ function renderLibrary(){
     });
   });
   grid.querySelectorAll("[data-del]").forEach(btn=>{
-    btn.addEventListener("click", (e)=>{
+    btn.addEventListener("click", async (e)=>{
       e.stopPropagation();
       const id = btn.dataset.del;
       state.customTexts = state.customTexts.filter(x=>x.id!==id);
-      saveState();
       renderLibrary();
+      const ok = await saveStateNow();
+      if(!ok) showToast("Не удалось сохранить изменения. Проверьте соединение.", true);
     });
   });
   document.getElementById("addOwnBtn").addEventListener("click", toggleCustomForm);
@@ -844,13 +988,16 @@ function toggleCustomForm(){
       </div>
     </div>`;
   document.getElementById("customCancel").addEventListener("click", toggleCustomForm);
-  document.getElementById("customSubmit").addEventListener("click", ()=>{
+  document.getElementById("customSubmit").addEventListener("click", async ()=>{
     const title = document.getElementById("customTitle").value.trim() || "Мой текст";
     const body = document.getElementById("customBody").value.trim();
     if(!body){
       document.getElementById("customBody").focus();
       return;
     }
+    const submitBtn = document.getElementById("customSubmit");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Сохраняем…";
     const obj = {
       id: "custom-" + Date.now(),
       title, level:"custom", teaser:"",
@@ -858,10 +1005,11 @@ function toggleCustomForm(){
     };
     state.customTexts.unshift(obj);
     if(state.customTexts.length > 10) state.customTexts.length = 10;
-    saveState();
+    const ok = await saveStateNow();
     toggleCustomForm();
     renderLibrary();
     openText(obj);
+    showToast(ok ? "Текст сохранён" : "Текст добавлен, но не удалось сохранить его — он может пропасть после перезагрузки.", !ok);
   });
   wrap.scrollIntoView({behavior:"smooth", block:"start"});
 }
@@ -915,12 +1063,13 @@ function refreshWordVisuals(){
   const dictView = document.querySelector('.view[data-view="dictionary"]');
   if(dictView && !dictView.classList.contains("hidden")) renderDictionary();
 }
-function addWord(key, translation, status){
+function addWord(key, translation, status, example){
   const prev = state.userWords[key];
   state.userWords[key] = {
     translation,
     status,
     addedAt: prev ? prev.addedAt : Date.now(),
+    example: (prev && prev.example) ? prev.example : (example || ""),
     source: BASE_DICT.hasOwnProperty(key) ? "built-in" : "custom"
   };
   saveState();
@@ -942,20 +1091,63 @@ function removeWord(key){
   updateStatsUI();
 }
 
+/* ============================================================
+   ОЗВУЧКА (Web Speech API) — при наведении и при клике
+   ============================================================ */
+function speak(text){
+  try{
+    if(!text || !("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "en-US";
+    u.rate = 0.92;
+    window.speechSynthesis.speak(u);
+  }catch(e){ /* синтез речи недоступен в этом браузере — молча пропускаем */ }
+}
+
+function highlightInSentence(sentence, token){
+  const idx = sentence.toLowerCase().indexOf(token.toLowerCase());
+  if(idx === -1) return escapeHtml(sentence);
+  return escapeHtml(sentence.slice(0, idx)) +
+    "<mark>" + escapeHtml(sentence.slice(idx, idx + token.length)) + "</mark>" +
+    escapeHtml(sentence.slice(idx + token.length));
+}
+
 function showTooltip(el, token){
   const info = lookupWord(token);
   const key = info ? info.key : token.toLowerCase();
   const existing = state.userWords[key];
   const layer = document.getElementById("tooltipLayer");
+  const sIdx = el.dataset.sidx;
+  const sentence = (sIdx !== undefined && readerSentences[sIdx]) ? readerSentences[sIdx] : null;
+
+  speak(token);
 
   let inner = `<button class="tt-close" id="ttClose" aria-label="Закрыть">✕</button>`;
-  inner += `<div class="tt-word">${escapeHtml(token)}</div>`;
+  inner += `<div class="tt-word-row"><span class="tt-word">${escapeHtml(token)}</span>
+    <button class="tt-speak" id="ttSpeak" aria-label="Произнести слово" title="Произнести слово">🔊</button></div>`;
   if(info && info.key !== token.toLowerCase()){
     inner += `<div class="tt-lemma">словарная форма: ${escapeHtml(info.key)}</div>`;
   }
 
   if(info){
     inner += `<div class="tt-translation">${escapeHtml(info.translation)}</div>`;
+    const freq = frequencyInfo(info.key);
+    inner += `<div class="tt-freq">
+      <span class="freq-bars" aria-hidden="true">
+        <span class="fbar h1 ${freq.bars>=1?'on':''}"></span>
+        <span class="fbar h2 ${freq.bars>=2?'on':''}"></span>
+        <span class="fbar h3 ${freq.bars>=3?'on':''}"></span>
+        <span class="fbar h4 ${freq.bars>=4?'on':''}"></span>
+      </span>
+      <span>${escapeHtml(freq.label)}</span>
+    </div>`;
+  }
+  if(sentence){
+    inner += `<div class="tt-context">${highlightInSentence(sentence, token)}</div>`;
+  }
+
+  if(info){
     if(!existing){
       inner += `<div class="tt-actions">
         <button class="primary" id="ttAddLearning">+ В изучение</button>
@@ -988,16 +1180,17 @@ function showTooltip(el, token){
   const rect = el.getBoundingClientRect();
   const top = window.scrollY + rect.bottom + 8;
   let left = window.scrollX + rect.left;
-  const maxLeft = window.scrollX + document.documentElement.clientWidth - 296;
+  const maxLeft = window.scrollX + document.documentElement.clientWidth - 332;
   if(left > maxLeft) left = Math.max(8, maxLeft);
   box.style.top = top + "px";
   box.style.left = left + "px";
 
   document.getElementById("ttClose").addEventListener("click", hideTooltip);
+  document.getElementById("ttSpeak").addEventListener("click", ()=>speak(token));
   const addLearning = document.getElementById("ttAddLearning");
-  if(addLearning) addLearning.addEventListener("click", ()=>addWord(key, info.translation, "learning"));
+  if(addLearning) addLearning.addEventListener("click", ()=>addWord(key, info.translation, "learning", sentence));
   const addKnown = document.getElementById("ttAddKnown");
-  if(addKnown) addKnown.addEventListener("click", ()=>addWord(key, info.translation, "known"));
+  if(addKnown) addKnown.addEventListener("click", ()=>addWord(key, info.translation, "known", sentence));
   const markKnown = document.getElementById("ttMarkKnown");
   if(markKnown) markKnown.addEventListener("click", ()=>setStatus(key, "known"));
   const markLearning = document.getElementById("ttMarkLearning");
@@ -1010,7 +1203,7 @@ function showTooltip(el, token){
     input.focus();
     const submit = ()=>{
       const val = input.value.trim();
-      if(val) addWord(key, val, "learning");
+      if(val) addWord(key, val, "learning", sentence);
     };
     saveCustom.addEventListener("click", submit);
     input.addEventListener("keydown", (e)=>{ if(e.key==="Enter") submit(); });
@@ -1048,8 +1241,12 @@ function renderDictionary(){
 
   content.innerHTML = `<div class="dict-grid">${entries.map(([key,v])=>`
     <div class="dict-chip" data-key="${escapeHtml(key)}">
-      <div class="w">${escapeHtml(key)}</div>
+      <div class="w-row" style="display:flex;align-items:baseline;justify-content:space-between;gap:6px;">
+        <span class="w">${escapeHtml(key)}</span>
+        <button class="tt-speak" data-speak="${escapeHtml(key)}" aria-label="Произнести" title="Произнести" style="width:22px;height:22px;font-size:11px;">🔊</button>
+      </div>
       <div class="t">${escapeHtml(v.translation)}</div>
+      ${v.example ? `<div class="ex">${highlightInSentence(v.example, key)}</div>` : ""}
       <span class="badge ${v.status}">${v.status==="known" ? "изучено" : "в изучении"}</span>
       <div class="chip-actions">
         ${v.status==="known"
@@ -1061,13 +1258,15 @@ function renderDictionary(){
 
   content.querySelectorAll(".dict-chip").forEach(chip=>{
     const key = chip.dataset.key;
-    chip.querySelectorAll("button").forEach(btn=>{
+    chip.querySelectorAll("button[data-act]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
         if(btn.dataset.act === "remove") removeWord(key);
         else setStatus(key, btn.dataset.act);
         renderDictionary();
       });
     });
+    const speakBtn = chip.querySelector("[data-speak]");
+    if(speakBtn) speakBtn.addEventListener("click", ()=>speak(key));
   });
 }
 
@@ -1084,7 +1283,7 @@ function shuffle(arr){
 function buildPracticeQueue(){
   practiceQueue = shuffle(Object.entries(state.userWords)
     .filter(([,v])=>v.status==="learning")
-    .map(([k,v])=>({key:k, translation:v.translation, streak:0})));
+    .map(([k,v])=>({key:k, translation:v.translation, example:v.example||"", streak:0})));
   practiceIndex = 0;
   practiceRevealed = false;
 }
@@ -1103,8 +1302,12 @@ function renderPractice(){
   content.innerHTML = `
     <div class="practice-wrap">
       <div class="flip-card" id="flipCard">
-        <div>${escapeHtml(item.key)}</div>
+        <div class="tt-word-row" style="justify-content:center;">
+          <span>${escapeHtml(item.key)}</span>
+          <button class="tt-speak" id="pSpeak" aria-label="Произнести" title="Произнести">🔊</button>
+        </div>
         ${practiceRevealed ? `<div class="translation">${escapeHtml(item.translation)}</div>` : ""}
+        ${practiceRevealed && item.example ? `<div class="example">${highlightInSentence(item.example, item.key)}</div>` : ""}
       </div>
       <div class="practice-actions">
         ${practiceRevealed
@@ -1114,6 +1317,7 @@ function renderPractice(){
       <div class="practice-progress">Осталось карточек: ${practiceQueue.length}</div>
     </div>`;
 
+  document.getElementById("pSpeak").addEventListener("click", ()=>speak(item.key));
   const reveal = document.getElementById("pReveal");
   if(reveal) reveal.addEventListener("click", ()=>{ practiceRevealed = true; renderPractice(); });
   const remember = document.getElementById("pRemember");
@@ -1174,6 +1378,16 @@ function wireGlobalEvents(){
       return;
     }
     if(!e.target.closest("#tooltipLayer")) hideTooltip();
+  });
+  let hoverSpeakTimer = null;
+  document.addEventListener("mouseover", (e)=>{
+    const wordEl = e.target.closest(".word");
+    if(!wordEl) return;
+    clearTimeout(hoverSpeakTimer);
+    hoverSpeakTimer = setTimeout(()=>speak(wordEl.dataset.token), 250);
+  });
+  document.addEventListener("mouseout", (e)=>{
+    if(e.target.closest(".word")) clearTimeout(hoverSpeakTimer);
   });
   document.addEventListener("keydown", (e)=>{
     if(e.key === "Escape"){ hideTooltip(); return; }
