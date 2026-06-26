@@ -124,12 +124,18 @@ main{max-width:980px;margin:0 auto;padding:32px 24px 90px;}
 /* ---------- Tooltip ---------- */
 .tooltip{position:absolute;z-index:50;background:#fff;border:1px solid var(--line);border-top:3px solid var(--amber);
   border-radius:8px;box-shadow:0 8px 24px rgba(30,42,34,0.18);padding:14px;min-width:240px;max-width:320px;font-size:14px;}
+.tooltip.wide{max-width:380px;}
+.tooltip .tt-phrase-words{font-family:'PT Serif',serif;font-size:16px;line-height:1.7;margin-bottom:10px;}
+.tooltip .tt-phrase-words .word{border-bottom-color:#8FAE93;}
 .tooltip .tt-word-row{display:flex;align-items:baseline;gap:8px;margin-bottom:2px;}
 .tooltip .tt-word{font-family:'PT Serif',serif;font-size:18px;}
 .tooltip .tt-speak{background:var(--amber-soft2);border:1px solid var(--line);border-radius:999px;width:26px;height:26px;
   display:inline-flex;align-items:center;justify-content:center;font-size:13px;padding:0;color:var(--ink-soft);flex:none;}
 .tooltip .tt-speak:hover{background:var(--amber-soft);}
 .tooltip .tt-lemma{font-size:12px;color:var(--ink-soft);margin-bottom:8px;}
+.tooltip .tt-ipa{font-family:'PT Serif',serif;font-style:italic;font-size:14px;color:var(--fern-dark);margin-bottom:8px;}
+.tooltip .tt-ipa.loading{font-family:inherit;font-style:normal;font-size:12px;color:var(--ink-soft);}
+.tooltip .tt-source{font-size:11px;color:var(--ink-soft);margin:-6px 0 10px;}
 .tooltip .tt-translation{font-size:16px;color:var(--fern-dark);font-weight:700;margin-bottom:10px;}
 .tooltip .tt-freq{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12px;color:var(--ink-soft);}
 .tooltip .freq-bars{display:inline-flex;align-items:flex-end;gap:2px;height:14px;flex:none;}
@@ -149,6 +155,7 @@ main{max-width:980px;margin:0 auto;padding:32px 24px 90px;}
 .tooltip .tt-hint{color:var(--ink-soft);margin-bottom:8px;}
 
 /* ---------- Dictionary ---------- */
+.dict-tools{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
 .dict-tabs{display:flex;gap:8px;margin-bottom:18px;}
 .dict-tabs button{background:none;border:1px solid var(--line);border-radius:999px;padding:7px 16px;font-size:13px;color:var(--ink-soft);}
 .dict-tabs button.active{background:var(--fern);color:#fff;border-color:var(--fern);}
@@ -186,6 +193,14 @@ footer{text-align:center;padding:24px;color:var(--ink-soft);font-size:13px;borde
   opacity:1;transition:opacity .3s, transform .3s;}
 .toast.error{background:var(--rust);}
 .toast.out{opacity:0;transform:translateY(6px);}
+
+.storage-warning{
+  position:fixed;top:0;left:0;right:0;z-index:90;background:var(--rust);color:#fff;
+  text-align:center;padding:10px 40px;font-size:13px;line-height:1.4;
+}
+.storage-warning button{
+  position:absolute;top:6px;right:10px;background:none;border:none;color:#fff;font-size:14px;padding:4px 8px;
+}
 
 @media (prefers-reduced-motion:reduce){*{transition:none !important;}}
 </style>
@@ -240,6 +255,7 @@ footer{text-align:center;padding:24px;color:var(--ink-soft);font-size:13px;borde
     <div class="reader-top">
       <button class="back-btn" id="readerBack">← К текстам</button>
       <h2 class="reader-title" id="readerTitle"></h2>
+      <button class="back-btn" id="readAloudBtn" data-playing="0">🔊 Слушать текст</button>
       <span class="reader-progress" id="readerProgress"></span>
     </div>
     <div class="reader-body" id="readerBody"></div>
@@ -254,6 +270,11 @@ footer{text-align:center;padding:24px;color:var(--ink-soft);font-size:13px;borde
     <div class="section-head">
       <h2>Мой словарь</h2>
       <p>Слова, которые вы встретили во время чтения.</p>
+    </div>
+    <div class="dict-tools">
+      <button class="btn secondary" id="exportBtn">⬇ Экспорт словаря</button>
+      <button class="btn secondary" id="importBtn">⬆ Импорт словаря</button>
+      <input type="file" id="importFile" accept="application/json" class="hidden">
     </div>
     <div class="dict-tabs">
       <button data-filter="all" class="active">Все</button>
@@ -699,6 +720,7 @@ let practiceQueue = [];
 let practiceIndex = 0;
 let practiceRevealed = false;
 let saveTimer = null;
+let storageWorks = null; // null = ещё не проверяли, true/false — результат самопроверки
 
 async function loadState(){
   try{
@@ -714,6 +736,23 @@ async function loadState(){
   }
 }
 
+// Реальная самопроверка: пишем тестовое значение и сразу читаем его обратно.
+// Так понятно, действительно ли хранилище работает в этом окружении,
+// а не просто «не упало с ошибкой».
+async function checkStorageWorks(){
+  try{
+    const probe = "probe-" + Date.now();
+    const setRes = await window.storage.set(STORAGE_KEY + "-probe", probe, false);
+    if(!setRes) { storageWorks = false; return false; }
+    const getRes = await window.storage.get(STORAGE_KEY + "-probe", false);
+    storageWorks = !!(getRes && getRes.value === probe);
+    return storageWorks;
+  }catch(e){
+    storageWorks = false;
+    return false;
+  }
+}
+
 function showToast(message, isError){
   const layer = document.getElementById("toastLayer");
   const el = document.createElement("div");
@@ -721,6 +760,17 @@ function showToast(message, isError){
   el.textContent = message;
   layer.appendChild(el);
   setTimeout(()=>{ el.classList.add("out"); setTimeout(()=>el.remove(), 300); }, 2200);
+}
+function showStorageWarningBanner(){
+  if(document.getElementById("storageWarning")) return;
+  const banner = document.createElement("div");
+  banner.id = "storageWarning";
+  banner.className = "storage-warning";
+  banner.innerHTML = `Сохранение в этом окне браузера сейчас не работает — слова и тексты пропадут после перезагрузки.
+    Используйте «Экспорт» в разделе «Мой словарь», чтобы не потерять прогресс.
+    <button id="dismissWarning" aria-label="Скрыть">✕</button>`;
+  document.body.appendChild(banner);
+  document.getElementById("dismissWarning").addEventListener("click", ()=>banner.remove());
 }
 
 // Сохраняет состояние немедленно, с одной повторной попыткой при сбое.
@@ -740,15 +790,68 @@ async function persistState(){
 }
 
 // Debounced-версия для частых, мелких изменений (например, клики по словам подряд).
+// В отличие от прежней версии, теперь реально сообщает, если сохранение не удалось —
+// раньше сбой просто уходил в консоль, и снаружи выглядело так, будто "ничего не сохраняется".
 function saveState(){
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(()=>{ persistState(); }, 250);
+  saveTimer = setTimeout(async ()=>{
+    const ok = await persistState();
+    if(!ok) showStorageWarningBanner();
+  }, 250);
 }
 
 // Немедленная версия для редких, важных действий (добавление/удаление своего текста).
 async function saveStateNow(){
   clearTimeout(saveTimer);
-  return await persistState();
+  const ok = await persistState();
+  if(!ok) showStorageWarningBanner();
+  return ok;
+}
+
+/* ============================================================
+   ЭКСПОРТ / ИМПОРТ СЛОВАРЯ — надёжная резервная копия,
+   не зависящая от того, работает ли автосохранение в браузере.
+   ============================================================ */
+function exportData(){
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    app: "ReadFox",
+    userWords: state.userWords,
+    customTexts: state.customTexts,
+    readTextIds: state.readTextIds
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = "readfox-backup-" + stamp + ".json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  showToast("Резервная копия скачана");
+}
+async function importDataFromFile(file){
+  try{
+    const text = await file.text();
+    const data = JSON.parse(text);
+    const importedWords = data.userWords || {};
+    const importedTexts = Array.isArray(data.customTexts) ? data.customTexts : [];
+    const wordCountBefore = Object.keys(state.userWords).length;
+    Object.assign(state.userWords, importedWords);
+    const existingIds = new Set(state.customTexts.map(t=>t.id));
+    importedTexts.forEach(t=>{ if(t && t.id && !existingIds.has(t.id)) state.customTexts.unshift(t); });
+    if(state.customTexts.length > 10) state.customTexts.length = 10;
+    const wordsAdded = Object.keys(state.userWords).length - wordCountBefore;
+    refreshWordVisuals();
+    updateStatsUI();
+    renderLibrary();
+    const ok = await saveStateNow();
+    showToast(`Импортировано слов: ${wordsAdded}. ${ok ? "Сохранено." : "Но сохранить не удалось — экспортируйте копию снова."}`, !ok);
+  }catch(e){
+    showToast("Не удалось прочитать файл резервной копии", true);
+  }
 }
 
 /* ============================================================
@@ -880,6 +983,7 @@ function showView(name){
     b.classList.toggle("active", b.dataset.view===name);
   });
   hideTooltip();
+  stopReading();
   window.scrollTo({top:0, behavior:"auto"});
 }
 
@@ -1070,7 +1174,23 @@ function addWord(key, translation, status, example){
     status,
     addedAt: prev ? prev.addedAt : Date.now(),
     example: (prev && prev.example) ? prev.example : (example || ""),
+    type: "word",
     source: BASE_DICT.hasOwnProperty(key) ? "built-in" : "custom"
+  };
+  saveState();
+  refreshWordVisuals();
+  updateStatsUI();
+}
+function addPhrase(text, translation){
+  const key = text.trim().toLowerCase();
+  const prev = state.userWords[key];
+  state.userWords[key] = {
+    translation,
+    status: "learning",
+    addedAt: prev ? prev.addedAt : Date.now(),
+    example: "",
+    type: "phrase",
+    source: "custom"
   };
   saveState();
   refreshWordVisuals();
@@ -1092,17 +1212,54 @@ function removeWord(key){
 }
 
 /* ============================================================
-   ОЗВУЧКА (Web Speech API) — при наведении и при клике
+   ОЗВУЧКА (Web Speech API) — при клике на слово/фразу и для всего текста
    ============================================================ */
 function speak(text){
   try{
     if(!text || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
+    resetReadAloudButton();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = "en-US";
     u.rate = 0.92;
     window.speechSynthesis.speak(u);
   }catch(e){ /* синтез речи недоступен в этом браузере — молча пропускаем */ }
+}
+
+function resetReadAloudButton(){
+  const btn = document.getElementById("readAloudBtn");
+  if(btn){ btn.textContent = "🔊 Слушать текст"; btn.dataset.playing = "0"; }
+}
+function playAudioUrl(url){
+  try{
+    window.speechSynthesis.cancel();
+    resetReadAloudButton();
+    new Audio(url).play().catch(()=>{});
+  }catch(e){ /* не получилось — просто без звука, без дублирования через TTS */ }
+}
+function stopReading(){
+  try{ if("speechSynthesis" in window) window.speechSynthesis.cancel(); }catch(e){}
+  resetReadAloudButton();
+}
+function readTextAloud(text){
+  const btn = document.getElementById("readAloudBtn");
+  if(!("speechSynthesis" in window)){
+    showToast("Озвучка не поддерживается в этом браузере", true);
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const chunks = splitSentences(text.replace(/\n+/g, " ")).map(c=>c.trim()).filter(Boolean);
+  if(!chunks.length) return;
+  const utterances = chunks.map(c=>{
+    const u = new SpeechSynthesisUtterance(c);
+    u.lang = "en-US";
+    u.rate = 0.92;
+    return u;
+  });
+  utterances[utterances.length - 1].onend = resetReadAloudButton;
+  utterances[utterances.length - 1].onerror = resetReadAloudButton;
+  utterances.forEach(u=>window.speechSynthesis.speak(u));
+  if(btn){ btn.textContent = "⏹ Остановить"; btn.dataset.playing = "1"; }
 }
 
 function highlightInSentence(sentence, token){
@@ -1113,102 +1270,332 @@ function highlightInSentence(sentence, token){
     escapeHtml(sentence.slice(idx + token.length));
 }
 
+/* ============================================================
+   ОНЛАЙН-СЛОВАРИ: перевод (MyMemory) и транскрипция (Free Dictionary API)
+   Используются только если слова нет в локальном словаре —
+   как подстраховка, а не основной источник. Результаты кэшируются
+   в памяти на время сессии, чтобы не запрашивать одно и то же слово дважды.
+   ============================================================ */
+const apiTranslationCache = {};
+const transcriptionCache = {};
+
+async function fetchWithTimeout(url, ms){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), ms);
+  try{
+    return await fetch(url, {signal: controller.signal});
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchApiTranslation(text){
+  const k = text.toLowerCase();
+  if(apiTranslationCache.hasOwnProperty(k)) return apiTranslationCache[k];
+  let result = null;
+  try{
+    const resp = await fetchWithTimeout(
+      "https://api.mymemory.translated.net/get?q=" + encodeURIComponent(text) + "&langpair=en|ru", 6000);
+    if(resp.ok){
+      const data = await resp.json();
+      let translated = data && data.responseData && data.responseData.translatedText;
+      if(translated){
+        translated = translated.trim();
+        if(translated && translated.toLowerCase() !== text.toLowerCase() && !/no query|mymemory warning/i.test(translated)){
+          result = translated;
+        }
+      }
+    }
+  }catch(e){ /* сеть/CORS/таймаут — просто остаёмся без перевода из API */ }
+  apiTranslationCache[k] = result;
+  return result;
+}
+
+async function fetchTranscription(word){
+  const k = word.toLowerCase();
+  if(transcriptionCache.hasOwnProperty(k)) return transcriptionCache[k];
+  let result = null;
+  try{
+    const resp = await fetchWithTimeout(
+      "https://api.dictionaryapi.dev/api/v2/entries/en/" + encodeURIComponent(k), 6000);
+    if(resp.ok){
+      const data = await resp.json();
+      let ipa = null, audio = null;
+      if(Array.isArray(data)){
+        for(const entry of data){
+          if(!ipa && entry.phonetic) ipa = entry.phonetic;
+          if(Array.isArray(entry.phonetics)){
+            for(const p of entry.phonetics){
+              if(!ipa && p.text) ipa = p.text;
+              if(!audio && p.audio) audio = p.audio;
+            }
+          }
+        }
+      }
+      if(ipa || audio) result = {ipa, audio};
+    }
+  }catch(e){ /* словарь недоступен — транскрипцию просто не показываем */ }
+  transcriptionCache[k] = result;
+  return result;
+}
+
+let tooltipRequestId = 0;
+
 function showTooltip(el, token){
-  const info = lookupWord(token);
+  const reqId = ++tooltipRequestId;
+  let info = lookupWord(token);
   const key = info ? info.key : token.toLowerCase();
-  const existing = state.userWords[key];
   const layer = document.getElementById("tooltipLayer");
-  const sIdx = el.dataset.sidx;
+  const sIdx = el.dataset ? el.dataset.sidx : undefined;
   const sentence = (sIdx !== undefined && readerSentences[sIdx]) ? readerSentences[sIdx] : null;
 
-  speak(token);
+  // Состояние, которое со временем дополняется асинхронными ответами API
+  const view = {
+    info,
+    fromApi: false,
+    apiStatus: info ? "skip" : "loading",   // skip | loading | failed | (перевод не нужен / не нужен запрос)
+    ipa: null,
+    ipaStatus: "loading",                   // loading | done | failed
+    audioUrl: (transcriptionCache[key.toLowerCase()] && transcriptionCache[key.toLowerCase()].audio) || null
+  };
+  if(view.audioUrl) playAudioUrl(view.audioUrl); else speak(token);
+
+  function paint(){
+    if(reqId !== tooltipRequestId) return; // открыта уже другая подсказка
+    const curKey = view.info ? view.info.key : key;
+    const existing = state.userWords[curKey];
+
+    let inner = `<button class="tt-close" id="ttClose" aria-label="Закрыть">✕</button>`;
+    inner += `<div class="tt-word-row"><span class="tt-word">${escapeHtml(token)}</span>
+      <button class="tt-speak" id="ttSpeak" aria-label="Произнести слово" title="Произнести слово">🔊</button></div>`;
+    if(view.info && view.info.key !== token.toLowerCase()){
+      inner += `<div class="tt-lemma">словарная форма: ${escapeHtml(view.info.key)}</div>`;
+    }
+    if(view.ipaStatus === "loading"){
+      inner += `<div class="tt-ipa loading">ищем транскрипцию…</div>`;
+    } else if(view.ipa){
+      inner += `<div class="tt-ipa">${escapeHtml(view.ipa)}</div>`;
+    }
+
+    if(view.info){
+      inner += `<div class="tt-translation">${escapeHtml(view.info.translation)}</div>`;
+      if(view.fromApi){
+        inner += `<div class="tt-source">🌐 перевод из онлайн-словаря</div>`;
+      }
+      const freq = frequencyInfo(view.info.key);
+      inner += `<div class="tt-freq">
+        <span class="freq-bars" aria-hidden="true">
+          <span class="fbar h1 ${freq.bars>=1?'on':''}"></span>
+          <span class="fbar h2 ${freq.bars>=2?'on':''}"></span>
+          <span class="fbar h3 ${freq.bars>=3?'on':''}"></span>
+          <span class="fbar h4 ${freq.bars>=4?'on':''}"></span>
+        </span>
+        <span>${escapeHtml(freq.label)}</span>
+      </div>`;
+    } else if(view.apiStatus === "loading"){
+      inner += `<div class="tt-hint">Ищем перевод в онлайн-словаре…</div>`;
+    }
+    if(sentence){
+      inner += `<div class="tt-context">${highlightInSentence(sentence, token)}</div>`;
+    }
+
+    if(view.info){
+      if(!existing){
+        inner += `<div class="tt-actions">
+          <button class="primary" id="ttAddLearning">+ В изучение</button>
+          <button id="ttAddKnown">Уже знаю</button>
+        </div>`;
+      } else if(existing.status === "learning"){
+        inner += `<div class="tt-status">Статус: в изучении</div>
+        <div class="tt-actions">
+          <button id="ttMarkKnown">Отметить как изучено</button>
+          <button class="danger" id="ttRemove">Убрать из словаря</button>
+        </div>`;
+      } else {
+        inner += `<div class="tt-status">Статус: изучено</div>
+        <div class="tt-actions">
+          <button id="ttMarkLearning">Вернуть в изучение</button>
+          <button class="danger" id="ttRemove">Убрать из словаря</button>
+        </div>`;
+      }
+    } else if(view.apiStatus !== "loading"){
+      inner += `<div class="tt-hint">Перевод не найден. Добавьте свой:</div>
+        <input class="tt-input" id="ttInput" type="text" placeholder="Например: красивый">
+        <div class="tt-actions">
+          <button class="primary" id="ttSaveCustom">Сохранить</button>
+        </div>`;
+    }
+
+    layer.innerHTML = `<div class="tooltip" id="ttBox">${inner}</div>`;
+
+    const box = document.getElementById("ttBox");
+    const rect = el.getBoundingClientRect();
+    const top = window.scrollY + rect.bottom + 8;
+    let left = window.scrollX + rect.left;
+    const maxLeft = window.scrollX + document.documentElement.clientWidth - 332;
+    if(left > maxLeft) left = Math.max(8, maxLeft);
+    box.style.top = top + "px";
+    box.style.left = left + "px";
+
+    document.getElementById("ttClose").addEventListener("click", hideTooltip);
+    document.getElementById("ttSpeak").addEventListener("click", ()=>{
+      if(view.audioUrl) playAudioUrl(view.audioUrl); else speak(token);
+    });
+    const addLearning = document.getElementById("ttAddLearning");
+    if(addLearning) addLearning.addEventListener("click", ()=>{
+      addWord(curKey, view.info.translation, "learning", sentence);
+      showToast("Добавлено в «В изучении» ✓");
+      paint();
+    });
+    const addKnown = document.getElementById("ttAddKnown");
+    if(addKnown) addKnown.addEventListener("click", ()=>{
+      addWord(curKey, view.info.translation, "known", sentence);
+      showToast("Добавлено в «Изучено» ✓");
+      paint();
+    });
+    const markKnown = document.getElementById("ttMarkKnown");
+    if(markKnown) markKnown.addEventListener("click", ()=>{
+      setStatus(curKey, "known");
+      showToast("Отмечено как изучено ✓");
+      paint();
+    });
+    const markLearning = document.getElementById("ttMarkLearning");
+    if(markLearning) markLearning.addEventListener("click", ()=>{
+      setStatus(curKey, "learning");
+      showToast("Возвращено в «В изучении» ✓");
+      paint();
+    });
+    const removeBtn = document.getElementById("ttRemove");
+    if(removeBtn) removeBtn.addEventListener("click", ()=>{
+      removeWord(curKey);
+      showToast("Убрано из словаря");
+      paint();
+    });
+    const saveCustom = document.getElementById("ttSaveCustom");
+    if(saveCustom){
+      const input = document.getElementById("ttInput");
+      input.focus();
+      const submit = ()=>{
+        const val = input.value.trim();
+        if(!val) return;
+        addWord(key, val, "learning", sentence);
+        view.info = {key, translation: val};
+        showToast("Добавлено в «В изучении» ✓");
+        paint();
+      };
+      saveCustom.addEventListener("click", submit);
+      input.addEventListener("keydown", (e)=>{ if(e.key==="Enter") submit(); });
+    }
+  }
+
+  paint();
+
+  // Транскрипция — пробуем для любого слова, локального или нет.
+  fetchTranscription(key).then(result=>{
+    view.ipaStatus = "done";
+    view.ipa = result ? result.ipa : null;
+    if(result && result.audio) view.audioUrl = result.audio;
+    paint();
+  });
+
+  // Перевод через API — только если в локальном словаре слова не нашлось.
+  if(!info){
+    fetchApiTranslation(token).then(translated=>{
+      view.apiStatus = translated ? "done" : "failed";
+      if(translated){
+        view.info = {key, translation: translated};
+        view.fromApi = true;
+      }
+      paint();
+    });
+  }
+}
+
+/* ============================================================
+   ВЫДЕЛЕНИЕ НЕСКОЛЬКИХ СЛОВ (ФРАЗА)
+   ============================================================ */
+function showPhraseTooltip(range, text){
+  const reqId = ++tooltipRequestId;
+  const key = text.toLowerCase();
+  const existing = state.userWords[key];
+  const layer = document.getElementById("tooltipLayer");
+
+  speak(text);
 
   let inner = `<button class="tt-close" id="ttClose" aria-label="Закрыть">✕</button>`;
-  inner += `<div class="tt-word-row"><span class="tt-word">${escapeHtml(token)}</span>
-    <button class="tt-speak" id="ttSpeak" aria-label="Произнести слово" title="Произнести слово">🔊</button></div>`;
-  if(info && info.key !== token.toLowerCase()){
-    inner += `<div class="tt-lemma">словарная форма: ${escapeHtml(info.key)}</div>`;
-  }
+  inner += `<div class="tt-word-row"><span class="tt-word" style="font-size:16px;">«${escapeHtml(text)}»</span>
+    <button class="tt-speak" id="ttSpeak" aria-label="Произнести фразу" title="Произнести фразу">🔊</button></div>`;
+  inner += `<div class="tt-lemma">слова по отдельности (нажмите для перевода):</div>`;
+  inner += `<div class="tt-phrase-words">${buildLineHtml(text)}</div>`;
 
-  if(info){
-    inner += `<div class="tt-translation">${escapeHtml(info.translation)}</div>`;
-    const freq = frequencyInfo(info.key);
-    inner += `<div class="tt-freq">
-      <span class="freq-bars" aria-hidden="true">
-        <span class="fbar h1 ${freq.bars>=1?'on':''}"></span>
-        <span class="fbar h2 ${freq.bars>=2?'on':''}"></span>
-        <span class="fbar h3 ${freq.bars>=3?'on':''}"></span>
-        <span class="fbar h4 ${freq.bars>=4?'on':''}"></span>
-      </span>
-      <span>${escapeHtml(freq.label)}</span>
-    </div>`;
-  }
-  if(sentence){
-    inner += `<div class="tt-context">${highlightInSentence(sentence, token)}</div>`;
-  }
-
-  if(info){
-    if(!existing){
-      inner += `<div class="tt-actions">
-        <button class="primary" id="ttAddLearning">+ В изучение</button>
-        <button id="ttAddKnown">Уже знаю</button>
-      </div>`;
-    } else if(existing.status === "learning"){
-      inner += `<div class="tt-status">Статус: в изучении</div>
+  if(existing){
+    inner += `<div class="tt-status">Сохранено как фраза, статус: ${existing.status==="known" ? "изучено" : "в изучении"}</div>
       <div class="tt-actions">
-        <button id="ttMarkKnown">Отметить как изучено</button>
-        <button class="danger" id="ttRemove">Убрать из словаря</button>
+        <button id="ttPhraseToggle">${existing.status==="known" ? "Вернуть в изучение" : "Отметить как изучено"}</button>
+        <button class="danger" id="ttPhraseRemove">Убрать из словаря</button>
       </div>`;
-    } else {
-      inner += `<div class="tt-status">Статус: изучено</div>
-      <div class="tt-actions">
-        <button id="ttMarkLearning">Вернуть в изучение</button>
-        <button class="danger" id="ttRemove">Убрать из словаря</button>
-      </div>`;
-    }
   } else {
-    inner += `<div class="tt-hint">Этого слова нет в словаре. Добавьте свой перевод:</div>
-      <input class="tt-input" id="ttInput" type="text" placeholder="Например: красивый">
+    inner += `<div class="tt-hint">Сохранить всю фразу со своим переводом:</div>
+      <input class="tt-input" id="ttPhraseInput" type="text" placeholder="Например: между прочим">
+      <div class="tt-ipa loading" id="ttPhraseLoading">ищем вариант перевода…</div>
       <div class="tt-actions">
-        <button class="primary" id="ttSaveCustom">Сохранить</button>
+        <button class="primary" id="ttPhraseSave">Сохранить фразу</button>
       </div>`;
   }
 
-  layer.innerHTML = `<div class="tooltip" id="ttBox">${inner}</div>`;
+  layer.innerHTML = `<div class="tooltip wide" id="ttBox">${inner}</div>`;
 
   const box = document.getElementById("ttBox");
-  const rect = el.getBoundingClientRect();
+  const rect = range.getBoundingClientRect();
   const top = window.scrollY + rect.bottom + 8;
   let left = window.scrollX + rect.left;
-  const maxLeft = window.scrollX + document.documentElement.clientWidth - 332;
+  const maxLeft = window.scrollX + document.documentElement.clientWidth - 372;
   if(left > maxLeft) left = Math.max(8, maxLeft);
   box.style.top = top + "px";
   box.style.left = left + "px";
 
   document.getElementById("ttClose").addEventListener("click", hideTooltip);
-  document.getElementById("ttSpeak").addEventListener("click", ()=>speak(token));
-  const addLearning = document.getElementById("ttAddLearning");
-  if(addLearning) addLearning.addEventListener("click", ()=>addWord(key, info.translation, "learning", sentence));
-  const addKnown = document.getElementById("ttAddKnown");
-  if(addKnown) addKnown.addEventListener("click", ()=>addWord(key, info.translation, "known", sentence));
-  const markKnown = document.getElementById("ttMarkKnown");
-  if(markKnown) markKnown.addEventListener("click", ()=>setStatus(key, "known"));
-  const markLearning = document.getElementById("ttMarkLearning");
-  if(markLearning) markLearning.addEventListener("click", ()=>setStatus(key, "learning"));
-  const removeBtn = document.getElementById("ttRemove");
-  if(removeBtn) removeBtn.addEventListener("click", ()=>removeWord(key));
-  const saveCustom = document.getElementById("ttSaveCustom");
-  if(saveCustom){
-    const input = document.getElementById("ttInput");
+  document.getElementById("ttSpeak").addEventListener("click", ()=>speak(text));
+  const toggleBtn = document.getElementById("ttPhraseToggle");
+  if(toggleBtn) toggleBtn.addEventListener("click", ()=>{
+    const newStatus = existing.status==="known" ? "learning" : "known";
+    setStatus(key, newStatus);
+    showToast(newStatus==="known" ? "Отмечено как изучено ✓" : "Возвращено в «В изучении» ✓");
+    hideTooltip();
+  });
+  const removeBtn = document.getElementById("ttPhraseRemove");
+  if(removeBtn) removeBtn.addEventListener("click", ()=>{
+    removeWord(key);
+    showToast("Убрано из словаря");
+    hideTooltip();
+  });
+  const saveBtn = document.getElementById("ttPhraseSave");
+  if(saveBtn){
+    const input = document.getElementById("ttPhraseInput");
     input.focus();
     const submit = ()=>{
       const val = input.value.trim();
-      if(val) addWord(key, val, "learning", sentence);
+      if(!val) return;
+      addPhrase(text, val);
+      showToast("Фраза добавлена в «В изучении» ✓");
+      hideTooltip();
     };
-    saveCustom.addEventListener("click", submit);
+    saveBtn.addEventListener("click", submit);
     input.addEventListener("keydown", (e)=>{ if(e.key==="Enter") submit(); });
+
+    fetchApiTranslation(text).then(suggested=>{
+      if(reqId !== tooltipRequestId) return; // подсказка уже закрыта/сменилась
+      const loadingEl = document.getElementById("ttPhraseLoading");
+      if(loadingEl) loadingEl.remove();
+      const liveInput = document.getElementById("ttPhraseInput");
+      if(suggested && liveInput && !liveInput.value.trim()){
+        liveInput.value = suggested;
+        liveInput.select();
+      }
+    });
   }
 }
+
 
 /* ============================================================
    ГЛАВНАЯ — ИНТЕРАКТИВНОЕ ДЕМО
@@ -1248,6 +1635,7 @@ function renderDictionary(){
       <div class="t">${escapeHtml(v.translation)}</div>
       ${v.example ? `<div class="ex">${highlightInSentence(v.example, key)}</div>` : ""}
       <span class="badge ${v.status}">${v.status==="known" ? "изучено" : "в изучении"}</span>
+      ${v.type==="phrase" ? `<span class="badge" style="background:var(--amber-soft2);color:var(--ink-soft);">фраза</span>` : ""}
       <div class="chip-actions">
         ${v.status==="known"
           ? `<button data-act="learning">В изучение</button>`
@@ -1359,6 +1747,14 @@ function wireGlobalEvents(){
   });
 
   document.getElementById("readerBack").addEventListener("click", ()=>showView("home"));
+  document.getElementById("readAloudBtn").addEventListener("click", ()=>{
+    const btn = document.getElementById("readAloudBtn");
+    if(btn.dataset.playing === "1"){
+      stopReading();
+    } else if(currentText){
+      readTextAloud(currentText.body);
+    }
+  });
   document.getElementById("heroStart").addEventListener("click", ()=>{
     document.getElementById("libraryGrid").scrollIntoView({behavior:"smooth", block:"start"});
   });
@@ -1371,7 +1767,21 @@ function wireGlobalEvents(){
     });
   });
 
+  document.getElementById("exportBtn").addEventListener("click", exportData);
+  document.getElementById("importBtn").addEventListener("click", ()=>{
+    document.getElementById("importFile").click();
+  });
+  document.getElementById("importFile").addEventListener("change", (e)=>{
+    const file = e.target.files && e.target.files[0];
+    if(file) importDataFromFile(file);
+    e.target.value = "";
+  });
+
   document.addEventListener("click", (e)=>{
+    const sel = window.getSelection();
+    if(sel && !sel.isCollapsed && sel.toString().trim().length > 0){
+      return; // активное выделение обрабатывается через mouseup ниже
+    }
     const wordEl = e.target.closest(".word");
     if(wordEl){
       showTooltip(wordEl, wordEl.dataset.token);
@@ -1379,16 +1789,11 @@ function wireGlobalEvents(){
     }
     if(!e.target.closest("#tooltipLayer")) hideTooltip();
   });
-  let hoverSpeakTimer = null;
-  document.addEventListener("mouseover", (e)=>{
-    const wordEl = e.target.closest(".word");
-    if(!wordEl) return;
-    clearTimeout(hoverSpeakTimer);
-    hoverSpeakTimer = setTimeout(()=>speak(wordEl.dataset.token), 250);
+
+  document.addEventListener("mouseup", ()=>{
+    setTimeout(handleSelectionUp, 0);
   });
-  document.addEventListener("mouseout", (e)=>{
-    if(e.target.closest(".word")) clearTimeout(hoverSpeakTimer);
-  });
+
   document.addEventListener("keydown", (e)=>{
     if(e.key === "Escape"){ hideTooltip(); return; }
     if((e.key === "Enter" || e.key === " ") && e.target.classList.contains("word")){
@@ -1398,12 +1803,35 @@ function wireGlobalEvents(){
   });
 }
 
+function isSelectionInsideContent(sel){
+  if(!sel.anchorNode) return false;
+  const container = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
+  return !!(container && container.closest(".reader-body, .demo-card"));
+}
+function handleSelectionUp(){
+  const sel = window.getSelection();
+  if(!sel || sel.isCollapsed) return;
+  const text = sel.toString().trim();
+  if(!text || !isSelectionInsideContent(sel)) return;
+  const range = sel.getRangeAt(0);
+  const tokens = text.match(WORD_RE) || [];
+  if(tokens.length <= 1){
+    // выделено фактически одно слово — показываем привычную подсказку для слова
+    if(tokens.length === 1) showTooltip(range, tokens[0]);
+    return;
+  }
+  showPhraseTooltip(range, text);
+}
+
+
 async function init(){
   await loadState();
   renderLibrary();
   renderDemoSentence();
   updateStatsUI();
   wireGlobalEvents();
+  const works = await checkStorageWorks();
+  if(!works) showStorageWarningBanner();
 }
 init();
 
