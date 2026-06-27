@@ -53,6 +53,21 @@ button:focus-visible, .word:focus-visible, input:focus-visible, textarea:focus-v
 .nav button.active{background:var(--fern);color:#fff;}
 .header-stats{display:flex;gap:14px;font-size:13px;color:var(--ink-soft);white-space:nowrap;}
 .header-stats b{color:var(--fern-dark);}
+.gear-btn{background:none;border:1px solid var(--line);border-radius:999px;width:28px;height:28px;font-size:14px;
+  color:var(--ink-soft);padding:0;flex:none;}
+.gear-btn:hover{background:var(--amber-soft2);}
+
+.voice-panel{
+  position:absolute;z-index:60;background:#fff;border:1px solid var(--line);border-top:3px solid var(--amber);
+  border-radius:8px;box-shadow:0 8px 24px rgba(30,42,34,0.18);padding:16px;width:280px;font-size:14px;
+}
+.voice-panel h4{font-size:14px;margin:0 0 10px;}
+.voice-panel select{width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--paper);
+  font-family:inherit;font-size:13px;margin-bottom:10px;}
+.voice-panel .actions{display:flex;gap:8px;}
+.voice-panel button{font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--paper);}
+.voice-panel button.primary{background:var(--fern);color:#fff;border-color:var(--fern);}
+.voice-panel .hint{font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.4;}
 
 main{max-width:980px;margin:0 auto;padding:32px 24px 90px;}
 
@@ -218,6 +233,7 @@ footer{text-align:center;padding:24px;color:var(--ink-soft);font-size:13px;borde
   <div class="header-stats">
     <span>В изучении: <b id="statLearning">0</b></span>
     <span>Изучено: <b id="statKnown">0</b></span>
+    <button class="gear-btn" id="voiceSettingsBtn" aria-label="Настройки голоса" title="Настройки голоса">⚙</button>
   </div>
 </header>
 
@@ -291,7 +307,7 @@ footer{text-align:center;padding:24px;color:var(--ink-soft);font-size:13px;borde
 
 </main>
 
-<footer>ReadFox — учебный проект для интерактивного чтения на английском языке.</footer>
+<footer>ReadFox — учебный проект для интерактивного чтения на английском языке. <span id="storageIndicator"></span></footer>
 
 <div id="tooltipLayer"></div>
 <div id="toastLayer"></div>
@@ -713,26 +729,44 @@ function frequencyInfo(key){
    СОСТОЯНИЕ И ХРАНИЛИЩЕ
    ============================================================ */
 const STORAGE_KEY = "readfox-state";
-let state = { userWords:{}, customTexts:[], readTextIds:[] };
+let state = { userWords:{}, customTexts:[], readTextIds:[], settings:{voiceName:null} };
 let currentText = null;
 let currentFilter = "all";
 let practiceQueue = [];
 let practiceIndex = 0;
 let practiceRevealed = false;
 let saveTimer = null;
-let storageWorks = null; // null = ещё не проверяли, true/false — результат самопроверки
+let storageWorks = null;   // null = ещё не проверяли, true/false — результат самопроверки
+let storageBackend = null; // "claude" | "local" — какой механизм реально используется
+
+// window.storage существует только внутри артефактов Claude. Если его нет —
+// значит, страница открыта отдельно от чата (как обычный файл/сайт), и можно
+// смело использовать localStorage браузера, который в этом случае работает
+// без всяких ограничений песочницы.
+function hasClaudeStorage(){
+  return typeof window.storage !== "undefined" && window.storage
+    && typeof window.storage.get === "function" && typeof window.storage.set === "function";
+}
 
 async function loadState(){
+  storageBackend = hasClaudeStorage() ? "claude" : "local";
   try{
-    const r = await window.storage.get(STORAGE_KEY, false);
-    if(r && r.value){
-      const parsed = JSON.parse(r.value);
+    let raw = null;
+    if(storageBackend === "claude"){
+      const r = await window.storage.get(STORAGE_KEY, false);
+      if(r) raw = r.value;
+    } else {
+      raw = localStorage.getItem(STORAGE_KEY);
+    }
+    if(raw){
+      const parsed = JSON.parse(raw);
       state.userWords = parsed.userWords || {};
       state.customTexts = parsed.customTexts || [];
       state.readTextIds = parsed.readTextIds || [];
+      state.settings = parsed.settings || {voiceName:null};
     }
   }catch(e){
-    // ключа пока нет в хранилище — используем значения по умолчанию
+    // ключа пока нет или хранилище недоступно — используем значения по умолчанию
   }
 }
 
@@ -740,12 +774,18 @@ async function loadState(){
 // Так понятно, действительно ли хранилище работает в этом окружении,
 // а не просто «не упало с ошибкой».
 async function checkStorageWorks(){
+  const probe = "probe-" + Date.now();
   try{
-    const probe = "probe-" + Date.now();
-    const setRes = await window.storage.set(STORAGE_KEY + "-probe", probe, false);
-    if(!setRes) { storageWorks = false; return false; }
-    const getRes = await window.storage.get(STORAGE_KEY + "-probe", false);
-    storageWorks = !!(getRes && getRes.value === probe);
+    if(storageBackend === "claude"){
+      const setRes = await window.storage.set(STORAGE_KEY + "-probe", probe, false);
+      if(!setRes){ storageWorks = false; return false; }
+      const getRes = await window.storage.get(STORAGE_KEY + "-probe", false);
+      storageWorks = !!(getRes && getRes.value === probe);
+    } else {
+      localStorage.setItem(STORAGE_KEY + "-probe", probe);
+      storageWorks = localStorage.getItem(STORAGE_KEY + "-probe") === probe;
+      localStorage.removeItem(STORAGE_KEY + "-probe");
+    }
     return storageWorks;
   }catch(e){
     storageWorks = false;
@@ -766,9 +806,10 @@ function showStorageWarningBanner(){
   const banner = document.createElement("div");
   banner.id = "storageWarning";
   banner.className = "storage-warning";
-  banner.innerHTML = `Сохранение в этом окне браузера сейчас не работает — слова и тексты пропадут после перезагрузки.
-    Используйте «Экспорт» в разделе «Мой словарь», чтобы не потерять прогресс.
-    <button id="dismissWarning" aria-label="Скрыть">✕</button>`;
+  const msg = storageBackend === "claude"
+    ? `Сохранение прямо в чате сейчас не работает. Самый надёжный вариант — скачайте файл и откройте его отдельно в браузере (не через чат): тогда сохранение пойдёт через localStorage и будет работать всегда. А пока используйте «Экспорт» в разделе «Мой словарь».`
+    : `Браузер не разрешает сохранение на этой странице (например, включён режим приватного просмотра). Используйте «Экспорт» в разделе «Мой словарь», чтобы не потерять прогресс.`;
+  banner.innerHTML = msg + ` <button id="dismissWarning" aria-label="Скрыть">✕</button>`;
   document.body.appendChild(banner);
   document.getElementById("dismissWarning").addEventListener("click", ()=>banner.remove());
 }
@@ -778,6 +819,10 @@ function showStorageWarningBanner(){
 // где важно явно знать, прошло ли сохранение.
 async function persistState(){
   const payload = JSON.stringify(state);
+  if(storageBackend === "local"){
+    try{ localStorage.setItem(STORAGE_KEY, payload); return true; }
+    catch(e){ console.error("Ошибка сохранения ReadFox (localStorage):", e); return false; }
+  }
   for(let attempt=0; attempt<2; attempt++){
     try{
       const result = await window.storage.set(STORAGE_KEY, payload, false);
@@ -1214,13 +1259,56 @@ function removeWord(key){
 /* ============================================================
    ОЗВУЧКА (Web Speech API) — при клике на слово/фразу и для всего текста
    ============================================================ */
+/* ============================================================
+   ВЫБОР ГОЛОСА. Браузер обычно даёт несколько английских голосов
+   разного качества — пытаемся выбрать самый «живой» автоматически,
+   но даём возможность выбрать вручную в настройках (⚙).
+   ============================================================ */
+let availableVoices = [];
+function loadVoices(){
+  try{ availableVoices = window.speechSynthesis ? window.speechSynthesis.getVoices() : []; }
+  catch(e){ availableVoices = []; }
+}
+if("speechSynthesis" in window){
+  loadVoices();
+  window.speechSynthesis.onvoiceschanged = loadVoices;
+}
+function englishVoices(){
+  return availableVoices.filter(v => v.lang && v.lang.toLowerCase().startsWith("en"));
+}
+// Голоса с такими словами в названии почти всегда заметно естественнее
+// дефолтного системного синтезатора (облачные/нейросетевые голоса).
+const NICE_VOICE_HINTS = ["natural", "neural", "enhanced", "premium", "online", "google", "wavenet", "siri", "aria", "jenny", "guy"];
+function pickBestVoice(){
+  const en = englishVoices();
+  if(!en.length) return null;
+  for(const hint of NICE_VOICE_HINTS){
+    const found = en.find(v => v.name.toLowerCase().includes(hint));
+    if(found) return found;
+  }
+  return en.find(v => v.lang.toLowerCase() === "en-us") || en[0];
+}
+function getActiveVoice(){
+  if(!availableVoices.length) loadVoices();
+  if(state.settings && state.settings.voiceName){
+    const chosen = availableVoices.find(v => v.name === state.settings.voiceName);
+    if(chosen) return chosen;
+  }
+  return pickBestVoice();
+}
+function applyVoice(utterance){
+  const voice = getActiveVoice();
+  if(voice){ utterance.voice = voice; utterance.lang = voice.lang; }
+  else { utterance.lang = "en-US"; }
+}
+
 function speak(text){
   try{
     if(!text || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
     resetReadAloudButton();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = "en-US";
+    applyVoice(u);
     u.rate = 0.92;
     window.speechSynthesis.speak(u);
   }catch(e){ /* синтез речи недоступен в этом браузере — молча пропускаем */ }
@@ -1252,7 +1340,7 @@ function readTextAloud(text){
   if(!chunks.length) return;
   const utterances = chunks.map(c=>{
     const u = new SpeechSynthesisUtterance(c);
-    u.lang = "en-US";
+    applyVoice(u);
     u.rate = 0.92;
     return u;
   });
@@ -1260,6 +1348,58 @@ function readTextAloud(text){
   utterances[utterances.length - 1].onerror = resetReadAloudButton;
   utterances.forEach(u=>window.speechSynthesis.speak(u));
   if(btn){ btn.textContent = "⏹ Остановить"; btn.dataset.playing = "1"; }
+}
+
+function toggleVoicePanel(){
+  const existing = document.getElementById("voicePanel");
+  if(existing){ existing.remove(); return; }
+  loadVoices();
+  const en = englishVoices();
+  const active = getActiveVoice();
+  const btn = document.getElementById("voiceSettingsBtn");
+  const panel = document.createElement("div");
+  panel.id = "voicePanel";
+  panel.className = "voice-panel";
+
+  let optionsHtml = `<option value="">Автоматически (лучший доступный)</option>`;
+  optionsHtml += en.map(v =>
+    `<option value="${escapeHtml(v.name)}" ${state.settings.voiceName===v.name ? "selected":""}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`
+  ).join("");
+
+  panel.innerHTML = `
+    <h4>Голос для озвучки</h4>
+    ${en.length ? `<select id="voiceSelect">${optionsHtml}</select>` : `<div class="hint">Браузер пока не отдал список голосов — некоторые browsers (например, мобильный Safari) подгружают их только после первого звука. Нажмите «Проверить».</div>`}
+    <div class="actions">
+      <button class="primary" id="voiceTestBtn">▶ Проверить</button>
+      <button id="voiceCloseBtn">Закрыть</button>
+    </div>
+    <div class="hint">Список голосов зависит от вашего браузера и операционной системы — отличается на Windows, Mac, Android и т.д.${active ? " Сейчас используется: " + escapeHtml(active.name) + "." : ""}</div>
+  `;
+  document.body.appendChild(panel);
+  const rect = btn.getBoundingClientRect();
+  panel.style.position = "absolute";
+  panel.style.top = (window.scrollY + rect.bottom + 8) + "px";
+  let left = window.scrollX + rect.right - 280;
+  if(left < 8) left = 8;
+  panel.style.left = left + "px";
+
+  const select = document.getElementById("voiceSelect");
+  if(select){
+    select.addEventListener("change", ()=>{
+      state.settings.voiceName = select.value || null;
+      saveState();
+    });
+  }
+  document.getElementById("voiceTestBtn").addEventListener("click", ()=>{
+    loadVoices();
+    if(select){
+      select.innerHTML = `<option value="">Автоматически (лучший доступный)</option>` + englishVoices().map(v =>
+        `<option value="${escapeHtml(v.name)}" ${state.settings.voiceName===v.name ? "selected":""}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`
+      ).join("");
+    }
+    speak("Hello! This is how I sound when reading English texts to you.");
+  });
+  document.getElementById("voiceCloseBtn").addEventListener("click", ()=>panel.remove());
 }
 
 function highlightInSentence(sentence, token){
@@ -1776,8 +1916,16 @@ function wireGlobalEvents(){
     if(file) importDataFromFile(file);
     e.target.value = "";
   });
+  document.getElementById("voiceSettingsBtn").addEventListener("click", (e)=>{
+    e.stopPropagation();
+    toggleVoicePanel();
+  });
 
   document.addEventListener("click", (e)=>{
+    if(!e.target.closest("#voicePanel, #voiceSettingsBtn")){
+      const panel = document.getElementById("voicePanel");
+      if(panel) panel.remove();
+    }
     const sel = window.getSelection();
     if(sel && !sel.isCollapsed && sel.toString().trim().length > 0){
       return; // активное выделение обрабатывается через mouseup ниже
@@ -1831,6 +1979,14 @@ async function init(){
   updateStatsUI();
   wireGlobalEvents();
   const works = await checkStorageWorks();
+  const indicator = document.getElementById("storageIndicator");
+  if(indicator){
+    if(storageBackend === "local"){
+      indicator.textContent = works ? "· сохранение: в этом браузере (localStorage) ✓" : "· сохранение сейчас не работает";
+    } else {
+      indicator.textContent = works ? "· сохранение: через Claude" : "· сохранение сейчас не работает";
+    }
+  }
   if(!works) showStorageWarningBanner();
 }
 init();
