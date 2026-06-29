@@ -21,6 +21,7 @@
   --line:#D7DCC6;
   --shadow:0 2px 10px rgba(30,42,34,0.08);
   --radius:10px;
+  --reader-font-size:19px;
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
@@ -80,7 +81,8 @@ main{max-width:980px;margin:0 auto;padding:32px 24px 90px;}
 .btn.secondary{background:transparent;border:1.5px solid var(--fern);color:var(--fern-dark);}
 .btn.secondary:hover{background:var(--amber-soft2);}
 
-.demo-card{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:26px;box-shadow:var(--shadow);}
+.demo-card{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:26px;box-shadow:var(--shadow);
+  -webkit-touch-callout:none;}
 .demo-card .demo-label{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--amber);font-weight:700;margin-bottom:10px;}
 .demo-sentence{font-family:'PT Serif',serif;font-size:23px;line-height:1.65;margin:0;}
 
@@ -90,6 +92,7 @@ main{max-width:980px;margin:0 auto;padding:32px 24px 90px;}
 .word.w-hit{border-bottom-color:#8FAE93;}
 .word.w-learning{background:var(--amber-soft);border-bottom:1.5px solid var(--amber);border-radius:3px;padding:0 2px;}
 .word.w-known{border-bottom:none;color:var(--fern-dark);font-weight:700;}
+.word.word-speaking{background:var(--amber);color:#fff;border-radius:3px;padding:0 2px;}
 
 /* ---------- Stats bar ---------- */
 .stats-bar{display:flex;gap:30px;padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:6px 0 36px;flex-wrap:wrap;}
@@ -127,11 +130,16 @@ main{max-width:980px;margin:0 auto;padding:32px 24px 90px;}
 .reader-top{display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap;}
 .back-btn{background:none;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:14px;color:var(--ink-soft);}
 .back-btn:hover{background:var(--amber-soft2);}
+.font-size-control{display:flex;gap:4px;}
+.font-size-control button{background:none;border:1px solid var(--line);border-radius:8px;width:32px;height:32px;
+  font-size:13px;font-weight:700;color:var(--ink-soft);padding:0;}
+.font-size-control button:hover{background:var(--amber-soft2);}
 .reader-title{font-size:23px;flex:1;}
 .reader-progress{font-size:13px;color:var(--ink-soft);}
-.reader-body{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:34px 38px;box-shadow:var(--shadow);}
+.reader-body{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:34px 38px;box-shadow:var(--shadow);
+  -webkit-touch-callout:none;}
 @media (max-width:600px){.reader-body{padding:24px 20px;}}
-.reader-body p{font-family:'PT Serif',serif;font-size:19px;line-height:1.85;margin:0 0 20px;}
+.reader-body p{font-family:'PT Serif',serif;font-size:var(--reader-font-size, 19px);line-height:1.85;margin:0 0 20px;}
 .reader-legend{display:flex;gap:18px;margin-top:16px;font-size:13px;color:var(--ink-soft);flex-wrap:wrap;}
 .reader-legend span{display:inline-flex;align-items:center;gap:6px;}
 .legend-swatch{width:14px;height:14px;border-radius:3px;display:inline-block;}
@@ -157,9 +165,11 @@ main{max-width:980px;margin:0 auto;padding:32px 24px 90px;}
 .tooltip .fbar{width:4px;background:var(--line);border-radius:1px;}
 .tooltip .fbar.h1{height:5px;} .tooltip .fbar.h2{height:8px;} .tooltip .fbar.h3{height:11px;} .tooltip .fbar.h4{height:14px;}
 .tooltip .fbar.on{background:var(--fern);}
-.tooltip .tt-context{font-size:13px;color:var(--ink-soft);font-style:italic;line-height:1.45;margin-bottom:10px;
+.tooltip .tt-context-row{display:flex;align-items:flex-start;gap:6px;margin-bottom:10px;}
+.tooltip .tt-context{font-size:13px;color:var(--ink-soft);font-style:italic;line-height:1.45;flex:1;
   border-left:2px solid var(--line);padding-left:8px;}
 .tooltip .tt-context mark{background:var(--amber-soft);color:var(--ink);font-style:normal;font-weight:700;padding:0 2px;border-radius:2px;}
+.tt-speak-sm{width:22px !important;height:22px !important;font-size:11px !important;flex:none;}
 .tooltip .tt-status{font-size:12px;color:var(--ink-soft);margin-bottom:8px;}
 .tooltip .tt-actions{display:flex;gap:6px;flex-wrap:wrap;}
 .tooltip .tt-actions button{font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--paper);}
@@ -180,7 +190,8 @@ main{max-width:980px;margin:0 auto;padding:32px 24px 90px;}
 .dict-chip{background:var(--paper-card);border:1px solid var(--line);border-radius:8px;padding:12px;}
 .dict-chip .w{font-family:'PT Serif',serif;font-size:17px;}
 .dict-chip .t{color:var(--ink-soft);font-size:14px;margin:2px 0 8px;}
-.dict-chip .ex{font-size:12px;color:var(--ink-soft);font-style:italic;margin-bottom:8px;line-height:1.4;}
+.dict-chip .ex-row{display:flex;align-items:flex-start;gap:6px;margin-bottom:8px;}
+.dict-chip .ex{font-size:12px;color:var(--ink-soft);font-style:italic;line-height:1.4;flex:1;}
 .dict-chip .ex mark{background:var(--amber-soft);font-style:normal;font-weight:700;border-radius:2px;}
 .dict-chip .badge{font-size:11px;padding:2px 8px;border-radius:999px;display:inline-block;}
 .badge.learning{background:var(--amber-soft);color:#7A4F12;}
@@ -195,7 +206,8 @@ main{max-width:980px;margin:0 auto;padding:32px 24px 90px;}
 .flip-card{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:50px 24px;box-shadow:var(--shadow);
   min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-family:'PT Serif',serif;font-size:28px;margin-bottom:18px;}
 .flip-card .translation{color:var(--fern-dark);font-size:22px;}
-.flip-card .example{font-size:13px;color:var(--ink-soft);font-style:italic;line-height:1.4;max-width:340px;}
+.flip-card .card-context-row{display:flex;align-items:flex-start;gap:8px;max-width:340px;}
+.flip-card .example{font-size:13px;color:var(--ink-soft);font-style:italic;line-height:1.4;flex:1;}
 .flip-card .example mark{background:var(--amber-soft);font-style:normal;font-weight:700;border-radius:2px;}
 .practice-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
 .practice-progress{margin-top:14px;font-size:13px;color:var(--ink-soft);}
@@ -271,6 +283,10 @@ footer{text-align:center;padding:24px;color:var(--ink-soft);font-size:13px;borde
     <div class="reader-top">
       <button class="back-btn" id="readerBack">← К текстам</button>
       <h2 class="reader-title" id="readerTitle"></h2>
+      <div class="font-size-control">
+        <button id="fontDecrease" aria-label="Уменьшить шрифт" title="Уменьшить шрифт">A-</button>
+        <button id="fontIncrease" aria-label="Увеличить шрифт" title="Увеличить шрифт">A+</button>
+      </div>
       <button class="back-btn" id="readAloudBtn" data-playing="0">🔊 Слушать текст</button>
       <span class="reader-progress" id="readerProgress"></span>
     </div>
@@ -729,7 +745,7 @@ function frequencyInfo(key){
    СОСТОЯНИЕ И ХРАНИЛИЩЕ
    ============================================================ */
 const STORAGE_KEY = "readfox-state";
-let state = { userWords:{}, customTexts:[], readTextIds:[], settings:{voiceName:null} };
+let state = { userWords:{}, customTexts:[], readTextIds:[], settings:{voiceName:null, fontSize:19} };
 let currentText = null;
 let currentFilter = "all";
 let practiceQueue = [];
@@ -763,7 +779,8 @@ async function loadState(){
       state.userWords = parsed.userWords || {};
       state.customTexts = parsed.customTexts || [];
       state.readTextIds = parsed.readTextIds || [];
-      state.settings = parsed.settings || {voiceName:null};
+      state.settings = parsed.settings || {voiceName:null, fontSize:19};
+      if(typeof state.settings.fontSize !== "number") state.settings.fontSize = 19;
     }
   }catch(e){
     // ключа пока нет или хранилище недоступно — используем значения по умолчанию
@@ -1314,16 +1331,26 @@ function speak(text){
   }catch(e){ /* синтез речи недоступен в этом браузере — молча пропускаем */ }
 }
 
+function clearSpeakingHighlight(){
+  const prev = document.querySelector(".word.word-speaking");
+  if(prev) prev.classList.remove("word-speaking");
+}
 function resetReadAloudButton(){
   const btn = document.getElementById("readAloudBtn");
   if(btn){ btn.textContent = "🔊 Слушать текст"; btn.dataset.playing = "0"; }
+  clearSpeakingHighlight();
 }
-function playAudioUrl(url){
+function playAudioUrl(url, fallbackText){
   try{
     window.speechSynthesis.cancel();
     resetReadAloudButton();
-    new Audio(url).play().catch(()=>{});
-  }catch(e){ /* не получилось — просто без звука, без дублирования через TTS */ }
+    const audio = new Audio(url);
+    const useFallback = ()=>{ if(fallbackText) speak(fallbackText); };
+    audio.addEventListener("error", useFallback);
+    audio.play().catch(useFallback);
+  }catch(e){
+    if(fallbackText) speak(fallbackText);
+  }
 }
 function stopReading(){
   try{ if("speechSynthesis" in window) window.speechSynthesis.cancel(); }catch(e){}
@@ -1336,18 +1363,70 @@ function readTextAloud(text){
     return;
   }
   window.speechSynthesis.cancel();
-  const chunks = splitSentences(text.replace(/\n+/g, " ")).map(c=>c.trim()).filter(Boolean);
+  clearSpeakingHighlight();
+
+  const flat = text.replace(/\n+/g, " ");
+  const chunks = splitSentences(flat);
   if(!chunks.length) return;
-  const utterances = chunks.map(c=>{
+
+  // Индекс слов: позиции токенов в «плоском» тексте + те же слова в DOM,
+  // в том же порядке — так onboundary можно превратить в подсветку нужного span.
+  const positions = [];
+  WORD_RE.lastIndex = 0;
+  let m;
+  while((m = WORD_RE.exec(flat))){
+    positions.push({start: m.index, end: m.index + m[0].length});
+  }
+  const wordSpans = Array.from(document.querySelectorAll("#readerBody .word"));
+  const canHighlight = wordSpans.length === positions.length;
+
+  let cumulative = 0;
+  const chunkOffsets = chunks.map(c => { const off = cumulative; cumulative += c.length; return off; });
+
+  function highlightAt(globalIndex){
+    if(!canHighlight) return;
+    let idx = positions.findIndex(p => globalIndex >= p.start && globalIndex < p.end);
+    if(idx === -1) idx = positions.findIndex(p => p.start >= globalIndex);
+    if(idx === -1) return;
+    clearSpeakingHighlight();
+    const el = wordSpans[idx];
+    if(el){
+      el.classList.add("word-speaking");
+      el.scrollIntoView({behavior:"smooth", block:"nearest"});
+    }
+  }
+
+  const utterances = chunks.map((c, i) => {
     const u = new SpeechSynthesisUtterance(c);
     applyVoice(u);
     u.rate = 0.92;
+    // Не во всех браузерах есть пословная гранулярность — берём charIndex,
+    // какой бы ни пришёл (word или sentence), это всё равно лучше, чем ничего.
+    u.onboundary = (event) => {
+      if(typeof event.charIndex === "number") highlightAt(chunkOffsets[i] + event.charIndex);
+    };
     return u;
   });
   utterances[utterances.length - 1].onend = resetReadAloudButton;
   utterances[utterances.length - 1].onerror = resetReadAloudButton;
   utterances.forEach(u=>window.speechSynthesis.speak(u));
   if(btn){ btn.textContent = "⏹ Остановить"; btn.dataset.playing = "1"; }
+}
+
+/* ============================================================
+   РАЗМЕР ШРИФТА ЧИТАЕМОГО ТЕКСТА
+   ============================================================ */
+const FONT_MIN = 15, FONT_MAX = 30, FONT_STEP = 2;
+function applyFontSize(){
+  const size = (state.settings && state.settings.fontSize) || 19;
+  document.documentElement.style.setProperty("--reader-font-size", size + "px");
+}
+function changeFontSize(delta){
+  let size = ((state.settings && state.settings.fontSize) || 19) + delta;
+  size = Math.max(FONT_MIN, Math.min(FONT_MAX, size));
+  state.settings.fontSize = size;
+  applyFontSize();
+  saveState();
 }
 
 function toggleVoicePanel(){
@@ -1498,7 +1577,7 @@ function showTooltip(el, token){
     ipaStatus: "loading",                   // loading | done | failed
     audioUrl: (transcriptionCache[key.toLowerCase()] && transcriptionCache[key.toLowerCase()].audio) || null
   };
-  if(view.audioUrl) playAudioUrl(view.audioUrl); else speak(token);
+  if(view.audioUrl) playAudioUrl(view.audioUrl, token); else speak(token);
 
   function paint(){
     if(reqId !== tooltipRequestId) return; // открыта уже другая подсказка
@@ -1536,7 +1615,10 @@ function showTooltip(el, token){
       inner += `<div class="tt-hint">Ищем перевод в онлайн-словаре…</div>`;
     }
     if(sentence){
-      inner += `<div class="tt-context">${highlightInSentence(sentence, token)}</div>`;
+      inner += `<div class="tt-context-row">
+        <div class="tt-context">${highlightInSentence(sentence, token)}</div>
+        <button class="tt-speak tt-speak-sm" id="ttSpeakContext" aria-label="Прочитать предложение" title="Прочитать предложение">🔊</button>
+      </div>`;
     }
 
     if(view.info){
@@ -1579,8 +1661,10 @@ function showTooltip(el, token){
 
     document.getElementById("ttClose").addEventListener("click", hideTooltip);
     document.getElementById("ttSpeak").addEventListener("click", ()=>{
-      if(view.audioUrl) playAudioUrl(view.audioUrl); else speak(token);
+      if(view.audioUrl) playAudioUrl(view.audioUrl, token); else speak(token);
     });
+    const speakContext = document.getElementById("ttSpeakContext");
+    if(speakContext) speakContext.addEventListener("click", ()=>speak(sentence));
     const addLearning = document.getElementById("ttAddLearning");
     if(addLearning) addLearning.addEventListener("click", ()=>{
       addWord(curKey, view.info.translation, "learning", sentence);
@@ -1773,7 +1857,10 @@ function renderDictionary(){
         <button class="tt-speak" data-speak="${escapeHtml(key)}" aria-label="Произнести" title="Произнести" style="width:22px;height:22px;font-size:11px;">🔊</button>
       </div>
       <div class="t">${escapeHtml(v.translation)}</div>
-      ${v.example ? `<div class="ex">${highlightInSentence(v.example, key)}</div>` : ""}
+      ${v.example ? `<div class="ex-row">
+        <div class="ex">${highlightInSentence(v.example, key)}</div>
+        <button class="tt-speak tt-speak-sm" data-speak-example="${escapeHtml(v.example)}" aria-label="Прочитать предложение" title="Прочитать предложение">🔊</button>
+      </div>` : ""}
       <span class="badge ${v.status}">${v.status==="known" ? "изучено" : "в изучении"}</span>
       ${v.type==="phrase" ? `<span class="badge" style="background:var(--amber-soft2);color:var(--ink-soft);">фраза</span>` : ""}
       <div class="chip-actions">
@@ -1795,6 +1882,8 @@ function renderDictionary(){
     });
     const speakBtn = chip.querySelector("[data-speak]");
     if(speakBtn) speakBtn.addEventListener("click", ()=>speak(key));
+    const speakExampleBtn = chip.querySelector("[data-speak-example]");
+    if(speakExampleBtn) speakExampleBtn.addEventListener("click", ()=>speak(speakExampleBtn.dataset.speakExample));
   });
 }
 
@@ -1834,8 +1923,11 @@ function renderPractice(){
           <span>${escapeHtml(item.key)}</span>
           <button class="tt-speak" id="pSpeak" aria-label="Произнести" title="Произнести">🔊</button>
         </div>
+        ${item.example ? `<div class="card-context-row">
+          <div class="example">${highlightInSentence(item.example, item.key)}</div>
+          <button class="tt-speak tt-speak-sm" id="pSpeakContext" aria-label="Прочитать предложение" title="Прочитать предложение">🔊</button>
+        </div>` : ""}
         ${practiceRevealed ? `<div class="translation">${escapeHtml(item.translation)}</div>` : ""}
-        ${practiceRevealed && item.example ? `<div class="example">${highlightInSentence(item.example, item.key)}</div>` : ""}
       </div>
       <div class="practice-actions">
         ${practiceRevealed
@@ -1846,6 +1938,8 @@ function renderPractice(){
     </div>`;
 
   document.getElementById("pSpeak").addEventListener("click", ()=>speak(item.key));
+  const speakContext = document.getElementById("pSpeakContext");
+  if(speakContext) speakContext.addEventListener("click", ()=>speak(item.example));
   const reveal = document.getElementById("pReveal");
   if(reveal) reveal.addEventListener("click", ()=>{ practiceRevealed = true; renderPractice(); });
   const remember = document.getElementById("pRemember");
@@ -1887,6 +1981,8 @@ function wireGlobalEvents(){
   });
 
   document.getElementById("readerBack").addEventListener("click", ()=>showView("home"));
+  document.getElementById("fontDecrease").addEventListener("click", ()=>changeFontSize(-FONT_STEP));
+  document.getElementById("fontIncrease").addEventListener("click", ()=>changeFontSize(FONT_STEP));
   document.getElementById("readAloudBtn").addEventListener("click", ()=>{
     const btn = document.getElementById("readAloudBtn");
     if(btn.dataset.playing === "1"){
@@ -1941,6 +2037,19 @@ function wireGlobalEvents(){
   document.addEventListener("mouseup", ()=>{
     setTimeout(handleSelectionUp, 0);
   });
+  // На телефоне выделение часто тянут за «ручки» нативного UI — mouseup может
+  // не сработать воврем. selectionchange срабатывает в любом случае; ждём,
+  // когда выделение перестанет меняться (пользователь закончил тянуть).
+  let selectionSettleTimer = null;
+  document.addEventListener("selectionchange", ()=>{
+    clearTimeout(selectionSettleTimer);
+    selectionSettleTimer = setTimeout(handleSelectionUp, 400);
+  });
+  // Подавляем нативное контекстное меню (копировать/найти и т.п.) внутри
+  // читаемого текста — вместо него показываем свою подсказку.
+  document.addEventListener("contextmenu", (e)=>{
+    if(e.target.closest(".reader-body, .demo-card")) e.preventDefault();
+  });
 
   document.addEventListener("keydown", (e)=>{
     if(e.key === "Escape"){ hideTooltip(); return; }
@@ -1961,19 +2070,24 @@ function handleSelectionUp(){
   if(!sel || sel.isCollapsed) return;
   const text = sel.toString().trim();
   if(!text || !isSelectionInsideContent(sel)) return;
-  const range = sel.getRangeAt(0);
+  // Сразу запоминаем положение и снимаем нативное выделение — это убирает
+  // системное меню (копировать/найти и т.п.), которое мешает на телефоне.
+  const rect = sel.getRangeAt(0).getBoundingClientRect();
+  const anchor = { getBoundingClientRect: () => rect };
+  sel.removeAllRanges();
   const tokens = text.match(WORD_RE) || [];
   if(tokens.length <= 1){
     // выделено фактически одно слово — показываем привычную подсказку для слова
-    if(tokens.length === 1) showTooltip(range, tokens[0]);
+    if(tokens.length === 1) showTooltip(anchor, tokens[0]);
     return;
   }
-  showPhraseTooltip(range, text);
+  showPhraseTooltip(anchor, text);
 }
 
 
 async function init(){
   await loadState();
+  applyFontSize();
   renderLibrary();
   renderDemoSentence();
   updateStatsUI();
