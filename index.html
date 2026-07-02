@@ -4,233 +4,411 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ReadFox — учим английский через тексты</title>
+<!-- Читаем тему из localStorage до того, как страница отрисуется — чтобы не было мигания -->
+<script>try{var s=JSON.parse(localStorage.getItem('readfox-state')||'{}');document.documentElement.setAttribute('data-theme',(s.settings&&s.settings.theme)||'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=PT+Serif:ital,wght@0,400;0,700;1,400&family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+/* ============================================================
+   READFOX — DARK MINIMAL
+   Near-black bg · amber accent · green for "known" state
+   Lora for reading content · JetBrains Mono for UI chrome
+   ============================================================ */
 :root{
-  --paper:#EEF1E6;
-  --paper-card:#FBFAF4;
-  --ink:#1E2A22;
-  --ink-soft:#566153;
-  --fern:#3F6B4F;
-  --fern-dark:#2C4D38;
-  --amber:#D98E3B;
-  --amber-soft:#F3DDB3;
-  --amber-soft2:#FBEFD8;
-  --rust:#B5483D;
-  --line:#D7DCC6;
-  --shadow:0 2px 10px rgba(30,42,34,0.08);
-  --radius:10px;
+  --bg:#0d1117;
+  --surface:#161b22;
+  --surface-2:#1c2128;
+  --surface-3:#21262d;
+  --line:#30363d;
+  --ink:#e6edf3;
+  --ink-soft:#8b949e;
+  --ink-muted:#6e7681;
+  --amber:#d4a017;
+  --amber-dim:#b8860b;
+  --amber-bg:rgba(212,160,23,.13);
+  --amber-bg2:rgba(212,160,23,.06);
+  --green:#3fb950;
+  --green-dim:#238636;
+  --green-bg:rgba(63,185,80,.10);
+  --rust:#f85149;
+  --rust-bg:rgba(248,81,73,.12);
+  --shadow:0 4px 16px rgba(0,0,0,.5);
+  --shadow-lg:0 8px 32px rgba(0,0,0,.65);
+  --radius:8px;
+  --radius-sm:5px;
   --reader-font-size:19px;
+  --font-scale:1;
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
 body{
-  background:var(--paper);
-  color:var(--ink);
-  font-family:'PT Sans',Arial,sans-serif;
-  line-height:1.5;
-  min-height:100vh;
+  background:var(--bg);color:var(--ink);
+  font-family:'JetBrains Mono','SF Mono','Menlo','Consolas',monospace;
+  font-size:14px;line-height:1.6;min-height:100vh;
 }
-h1,h2,h3{font-family:'PT Serif',Georgia,serif;margin:0;}
-a{color:var(--fern-dark);}
-button{font-family:inherit;cursor:pointer;}
-button:focus-visible, .word:focus-visible, input:focus-visible, textarea:focus-visible{
-  outline:2px solid var(--fern); outline-offset:2px;
+h1,h2,h3{font-family:'Lora',Georgia,serif;font-weight:600;margin:0;color:var(--ink);}
+a{color:var(--amber);text-decoration:none;}
+a:hover{text-decoration:underline;}
+button{font-family:inherit;cursor:pointer;font-size:13px;}
+button:focus-visible,.word:focus-visible,input:focus-visible,textarea:focus-visible{
+  outline:2px solid var(--amber);outline-offset:2px;
 }
 .hidden{display:none !important;}
 
-/* ---------- Header ---------- */
+/* ── HEADER ─────────────────────────────────────── */
 .site-header{
-  display:flex;align-items:center;justify-content:space-between;gap:14px;
-  padding:14px 28px;border-bottom:1px solid var(--line);background:var(--paper-card);
-  position:sticky;top:0;z-index:30;flex-wrap:wrap;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:0 24px;height:52px;border-bottom:1px solid var(--line);
+  background:var(--surface);position:sticky;top:0;z-index:30;flex-wrap:wrap;
 }
-.logo{display:flex;align-items:center;gap:8px;font-family:'PT Serif',serif;font-size:21px;font-weight:700;color:var(--fern-dark);}
-.logo .mark{font-size:23px;}
-.nav{display:flex;gap:4px;flex-wrap:wrap;}
-.nav button{background:none;border:none;padding:8px 14px;border-radius:999px;font-size:15px;color:var(--ink-soft);}
-.nav button:hover{background:var(--amber-soft2);color:var(--ink);}
-.nav button.active{background:var(--fern);color:#fff;}
-.header-stats{display:flex;gap:14px;font-size:13px;color:var(--ink-soft);white-space:nowrap;}
-.header-stats b{color:var(--fern-dark);}
-.gear-btn{background:none;border:1px solid var(--line);border-radius:999px;width:28px;height:28px;font-size:14px;
-  color:var(--ink-soft);padding:0;flex:none;}
-.gear-btn:hover{background:var(--amber-soft2);}
+.logo{
+  display:flex;align-items:center;gap:8px;
+  font-family:'Lora',serif;font-size:17px;font-weight:700;color:var(--ink);
+}
+.logo .mark{font-size:19px;}
+.nav{display:flex;gap:2px;}
+.nav button{
+  background:none;border:none;padding:6px 12px;border-radius:var(--radius-sm);
+  font-size:13px;color:var(--ink-soft);
+}
+.nav button:hover{background:var(--surface-3);color:var(--ink);}
+.nav button.active{background:var(--amber-bg);color:var(--amber);}
+.header-stats{display:flex;align-items:center;gap:16px;font-size:12px;color:var(--ink-muted);white-space:nowrap;}
+.header-stats b{color:var(--amber);font-weight:600;}
+.gear-btn{
+  background:none;border:1px solid var(--line);border-radius:var(--radius-sm);
+  width:28px;height:28px;font-size:13px;color:var(--ink-soft);padding:0;flex:none;
+}
+.gear-btn:hover{background:var(--surface-3);color:var(--ink);}
 
 .voice-panel{
-  position:absolute;z-index:60;background:#fff;border:1px solid var(--line);border-top:3px solid var(--amber);
-  border-radius:8px;box-shadow:0 8px 24px rgba(30,42,34,0.18);padding:16px;width:280px;font-size:14px;
+  position:absolute;z-index:60;background:var(--surface);
+  border:1px solid var(--line);border-top:2px solid var(--amber);
+  border-radius:var(--radius);box-shadow:var(--shadow-lg);padding:16px;width:290px;font-size:13px;
 }
-.voice-panel h4{font-size:14px;margin:0 0 10px;}
-.voice-panel select{width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--paper);
-  font-family:inherit;font-size:13px;margin-bottom:10px;}
+.voice-panel h4{font-size:13px;font-weight:600;margin:0 0 10px;color:var(--ink);}
+.voice-panel select{
+  width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);
+  background:var(--surface-2);color:var(--ink);font-family:inherit;font-size:12px;margin-bottom:10px;
+}
 .voice-panel .actions{display:flex;gap:8px;}
-.voice-panel button{font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--paper);}
-.voice-panel button.primary{background:var(--fern);color:#fff;border-color:var(--fern);}
-.voice-panel .hint{font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.4;}
+.voice-panel button{
+  padding:6px 12px;border-radius:var(--radius-sm);
+  border:1px solid var(--line);background:var(--surface-2);color:var(--ink-soft);
+}
+.voice-panel button:hover{background:var(--surface-3);color:var(--ink);}
+.voice-panel button.primary{background:var(--green-dim);color:#fff;border-color:var(--green-dim);}
+.voice-panel button.primary:hover{background:var(--green);}
+.voice-panel .hint{font-size:11px;color:var(--ink-muted);margin-top:10px;line-height:1.5;}
 
-main{max-width:980px;margin:0 auto;padding:32px 24px 90px;}
+/* ── LAYOUT ──────────────────────────────────────── */
+main{max-width:1000px;margin:0 auto;padding:36px 24px 100px;}
 
-/* ---------- Hero ---------- */
-.hero{display:grid;grid-template-columns:1.1fr 1fr;gap:36px;align-items:center;padding:10px 0 40px;}
-.hero h1{font-size:38px;line-height:1.18;margin:0 0 14px;}
-.hero p.lead{font-size:17px;color:var(--ink-soft);margin:0 0 22px;max-width:480px;}
-.btn{display:inline-block;border:none;border-radius:8px;padding:12px 22px;font-size:15px;font-weight:700;background:var(--fern);color:#fff;}
-.btn:hover{background:var(--fern-dark);}
-.btn.secondary{background:transparent;border:1.5px solid var(--fern);color:var(--fern-dark);}
-.btn.secondary:hover{background:var(--amber-soft2);}
+/* ── HERO ────────────────────────────────────────── */
+.hero{display:grid;grid-template-columns:1.1fr 1fr;gap:40px;align-items:center;padding:4px 0 48px;}
+.hero h1{font-size:34px;line-height:1.22;margin:0 0 14px;}
+.hero p.lead{font-size:15px;color:var(--ink-soft);margin:0 0 22px;max-width:440px;line-height:1.65;}
+.btn{
+  display:inline-flex;align-items:center;gap:6px;border:none;
+  border-radius:var(--radius-sm);padding:9px 18px;
+  font-size:13px;font-weight:600;font-family:inherit;
+  background:var(--amber);color:var(--bg);
+}
+.btn:hover{background:var(--amber-dim);}
+.btn.secondary{
+  background:transparent;border:1px solid var(--line);
+  color:var(--ink-soft);
+}
+.btn.secondary:hover{background:var(--surface-2);color:var(--ink);border-color:var(--ink-muted);}
 
-.demo-card{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:26px;box-shadow:var(--shadow);
-  -webkit-touch-callout:none;}
-.demo-card .demo-label{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--amber);font-weight:700;margin-bottom:10px;}
-.demo-sentence{font-family:'PT Serif',serif;font-size:23px;line-height:1.65;margin:0;}
+.demo-card{
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);padding:24px;-webkit-touch-callout:none;
+}
+.demo-card .demo-label{
+  font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--amber);font-weight:600;margin-bottom:10px;
+}
+.demo-sentence{
+  font-family:'Lora',Georgia,serif;
+  font-size:calc(20px * var(--font-scale));
+  line-height:1.7;margin:0;
+}
 
-/* ---------- clickable word styling (shared) ---------- */
-.word{cursor:pointer;border-bottom:1px dotted #C9CDB8;padding-bottom:1px;}
-.word:hover{background:var(--amber-soft2);}
-.word.w-hit{border-bottom-color:#8FAE93;}
-.word.w-learning{background:var(--amber-soft);border-bottom:1.5px solid var(--amber);border-radius:3px;padding:0 2px;}
-.word.w-known{border-bottom:none;color:var(--fern-dark);font-weight:700;}
-.word.word-speaking{background:var(--amber);color:#fff;border-radius:3px;padding:0 2px;}
+/* ── WORD STATES ─────────────────────────────────── */
+.word{cursor:pointer;border-bottom:1px dotted var(--line);padding-bottom:1px;transition:background .1s;}
+.word:hover{background:var(--amber-bg2);border-radius:3px;}
+.word.w-hit{border-bottom-color:var(--ink-muted);}
+.word.w-learning{background:var(--amber-bg);border-bottom:1.5px solid var(--amber);border-radius:3px;padding:0 2px;}
+.word.w-known{border-bottom:none;color:var(--green);font-weight:500;}
+.word.word-speaking{background:var(--amber);color:var(--bg);border-radius:3px;padding:0 2px;border-bottom:none;}
 
-/* ---------- Stats bar ---------- */
-.stats-bar{display:flex;gap:30px;padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:6px 0 36px;flex-wrap:wrap;}
-.stats-bar .stat{font-size:13px;color:var(--ink-soft);}
-.stats-bar .stat b{display:block;font-family:'PT Serif',serif;font-size:24px;color:var(--fern-dark);}
+/* ── STATS BAR ───────────────────────────────────── */
+.stats-bar{
+  display:flex;gap:32px;padding:18px 0;
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  margin:6px 0 36px;flex-wrap:wrap;
+}
+.stats-bar .stat{font-size:12px;color:var(--ink-muted);}
+.stats-bar .stat b{
+  display:block;font-family:'Lora',serif;
+  font-size:26px;font-weight:600;color:var(--ink);margin-bottom:1px;
+}
 
-/* ---------- Section heading ---------- */
-.section-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
-.section-head h2{font-size:23px;}
-.section-head p{margin:0;color:var(--ink-soft);font-size:14px;}
+/* ── SECTION HEADING ─────────────────────────────── */
+.section-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:20px;flex-wrap:wrap;gap:10px;}
+.section-head h2{font-size:20px;}
+.section-head p{margin:0;color:var(--ink-muted);font-size:12px;}
 
-/* ---------- Library grid ---------- */
-.library-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;}
-@media (max-width:680px){.library-grid{grid-template-columns:1fr;} .hero{grid-template-columns:1fr;}}
-.text-card{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:20px;display:flex;flex-direction:column;gap:8px;box-shadow:var(--shadow);}
-.text-card .level{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;}
-.level .dot{width:7px;height:7px;border-radius:50%;background:var(--line);display:inline-block;}
+/* ── LIBRARY ─────────────────────────────────────── */
+.library-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
+@media(max-width:680px){.library-grid{grid-template-columns:1fr;}.hero{grid-template-columns:1fr;}}
+
+.text-card{
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);padding:18px;
+  display:flex;flex-direction:column;gap:8px;transition:border-color .15s;
+}
+.text-card:hover{border-color:var(--ink-muted);}
+.text-card .level{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.05em;}
+.level .dot{width:6px;height:6px;border-radius:50%;background:var(--line);display:inline-block;}
 .level .dot.on{background:var(--amber);}
-.text-card h3{font-size:19px;}
-.text-card .teaser{color:var(--ink-soft);font-size:14px;flex:1;}
-.text-card .meta{font-size:12px;color:var(--ink-soft);}
-.text-card .row{display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;}
-.text-card .go{font-size:14px;font-weight:700;color:var(--fern-dark);background:none;border:none;padding:0;}
-.text-card.add-own{border-style:dashed;align-items:center;justify-content:center;text-align:center;color:var(--ink-soft);min-height:140px;}
-.text-card.add-own button{background:none;border:none;color:var(--fern-dark);font-weight:700;font-size:15px;}
-.text-card .del{background:none;border:none;color:var(--rust);font-size:12px;}
+.text-card h3{font-family:'Lora',serif;font-size:calc(17px * var(--font-scale));color:var(--ink);font-weight:600;}
+.text-card .teaser{color:var(--ink-soft);font-size:calc(12px * var(--font-scale));flex:1;line-height:1.55;}
+.text-card .meta{font-size:11px;color:var(--ink-muted);}
+.text-card .row{display:flex;justify-content:space-between;align-items:center;margin-top:4px;gap:8px;}
+.text-card .go{font-size:12px;font-weight:600;color:var(--amber);background:none;border:none;padding:0;font-family:inherit;}
+.text-card .go:hover{color:var(--amber-dim);}
+.text-card.add-own{
+  border-style:dashed;align-items:center;justify-content:center;
+  text-align:center;color:var(--ink-muted);min-height:130px;
+}
+.text-card.add-own:hover{border-color:var(--ink-muted);}
+.text-card.add-own button{background:none;border:none;color:var(--ink-soft);font-weight:600;font-size:13px;font-family:inherit;}
+.text-card.add-own button:hover{color:var(--ink);}
+.text-card .del{background:none;border:none;color:var(--rust);font-size:11px;font-family:inherit;}
 
-.custom-form{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin-top:18px;}
-.custom-form label{font-size:13px;color:var(--ink-soft);display:block;margin-bottom:4px;}
-.custom-form input, .custom-form textarea{width:100%;font-family:inherit;font-size:14px;padding:10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);margin-bottom:12px;}
+.custom-form{
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);padding:20px;margin-top:14px;
+}
+.custom-form label{font-size:12px;color:var(--ink-soft);display:block;margin-bottom:5px;}
+.custom-form input,.custom-form textarea{
+  width:100%;font-family:inherit;font-size:13px;padding:9px 12px;
+  border:1px solid var(--line);border-radius:var(--radius-sm);
+  background:var(--surface-2);color:var(--ink);margin-bottom:12px;
+}
+.custom-form input:focus,.custom-form textarea:focus{border-color:var(--amber);}
 .custom-form textarea{min-height:140px;resize:vertical;}
 .custom-form .actions{display:flex;gap:10px;}
 
-/* ---------- Reader ---------- */
-.reader-top{display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap;}
-.back-btn{background:none;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:14px;color:var(--ink-soft);}
-.back-btn:hover{background:var(--amber-soft2);}
-.font-size-control{display:flex;gap:4px;}
-.font-size-control button{background:none;border:1px solid var(--line);border-radius:8px;width:32px;height:32px;
-  font-size:13px;font-weight:700;color:var(--ink-soft);padding:0;}
-.font-size-control button:hover{background:var(--amber-soft2);}
-.reader-title{font-size:23px;flex:1;}
-.reader-progress{font-size:13px;color:var(--ink-soft);}
-.reader-body{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:34px 38px;box-shadow:var(--shadow);
-  -webkit-touch-callout:none;}
-@media (max-width:600px){.reader-body{padding:24px 20px;}}
-.reader-body p{font-family:'PT Serif',serif;font-size:var(--reader-font-size, 19px);line-height:1.85;margin:0 0 20px;}
-.reader-legend{display:flex;gap:18px;margin-top:16px;font-size:13px;color:var(--ink-soft);flex-wrap:wrap;}
-.reader-legend span{display:inline-flex;align-items:center;gap:6px;}
-.legend-swatch{width:14px;height:14px;border-radius:3px;display:inline-block;}
+/* ── READER ──────────────────────────────────────── */
+.reader-top{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap;}
+.back-btn{
+  background:none;border:1px solid var(--line);border-radius:var(--radius-sm);
+  padding:6px 12px;font-size:12px;color:var(--ink-soft);font-family:inherit;
+}
+.back-btn:hover{background:var(--surface-2);color:var(--ink);}
+.font-size-control{display:flex;gap:3px;}
+.font-size-control button{
+  background:none;border:1px solid var(--line);border-radius:var(--radius-sm);
+  width:30px;height:30px;font-size:12px;font-weight:700;
+  color:var(--ink-soft);padding:0;font-family:inherit;
+}
+.font-size-control button:hover{background:var(--surface-2);color:var(--ink);}
+.reader-title{font-size:20px;flex:1;}
+.reader-progress{font-size:12px;color:var(--ink-muted);}
+.reader-body{
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);padding:36px 44px;-webkit-touch-callout:none;
+}
+@media(max-width:600px){.reader-body{padding:22px 18px;}}
+.reader-body p{
+  font-family:'Lora',Georgia,serif;
+  font-size:var(--reader-font-size);
+  line-height:1.9;margin:0 0 22px;color:var(--ink);
+}
+.reader-legend{display:flex;gap:18px;margin-top:14px;font-size:12px;color:var(--ink-muted);flex-wrap:wrap;}
+.reader-legend span{display:inline-flex;align-items:center;gap:5px;}
+.legend-swatch{width:13px;height:13px;border-radius:3px;display:inline-block;}
 
-/* ---------- Tooltip ---------- */
-.tooltip{position:absolute;z-index:50;background:#fff;border:1px solid var(--line);border-top:3px solid var(--amber);
-  border-radius:8px;box-shadow:0 8px 24px rgba(30,42,34,0.18);padding:14px;min-width:240px;max-width:320px;font-size:14px;}
+/* ── TOOLTIP ─────────────────────────────────────── */
+.tooltip{
+  position:absolute;z-index:50;
+  background:var(--surface);border:1px solid var(--line);
+  border-top:2px solid var(--amber);
+  border-radius:var(--radius);box-shadow:var(--shadow-lg);
+  padding:14px;min-width:240px;max-width:320px;font-size:13px;
+}
 .tooltip.wide{max-width:380px;}
-.tooltip .tt-phrase-words{font-family:'PT Serif',serif;font-size:16px;line-height:1.7;margin-bottom:10px;}
-.tooltip .tt-phrase-words .word{border-bottom-color:#8FAE93;}
+.tooltip .tt-phrase-words{font-family:'Lora',serif;font-size:calc(15px * var(--font-scale));line-height:1.7;margin-bottom:10px;}
+.tooltip .tt-phrase-words .word{border-bottom-color:var(--ink-muted);}
 .tooltip .tt-word-row{display:flex;align-items:baseline;gap:8px;margin-bottom:2px;}
-.tooltip .tt-word{font-family:'PT Serif',serif;font-size:18px;}
-.tooltip .tt-speak{background:var(--amber-soft2);border:1px solid var(--line);border-radius:999px;width:26px;height:26px;
-  display:inline-flex;align-items:center;justify-content:center;font-size:13px;padding:0;color:var(--ink-soft);flex:none;}
-.tooltip .tt-speak:hover{background:var(--amber-soft);}
-.tooltip .tt-lemma{font-size:12px;color:var(--ink-soft);margin-bottom:8px;}
-.tooltip .tt-ipa{font-family:'PT Serif',serif;font-style:italic;font-size:14px;color:var(--fern-dark);margin-bottom:8px;}
-.tooltip .tt-ipa.loading{font-family:inherit;font-style:normal;font-size:12px;color:var(--ink-soft);}
-.tooltip .tt-source{font-size:11px;color:var(--ink-soft);margin:-6px 0 10px;}
-.tooltip .tt-translation{font-size:16px;color:var(--fern-dark);font-weight:700;margin-bottom:10px;}
-.tooltip .tt-freq{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12px;color:var(--ink-soft);}
-.tooltip .freq-bars{display:inline-flex;align-items:flex-end;gap:2px;height:14px;flex:none;}
-.tooltip .fbar{width:4px;background:var(--line);border-radius:1px;}
-.tooltip .fbar.h1{height:5px;} .tooltip .fbar.h2{height:8px;} .tooltip .fbar.h3{height:11px;} .tooltip .fbar.h4{height:14px;}
-.tooltip .fbar.on{background:var(--fern);}
-.tooltip .tt-context-row{display:flex;align-items:flex-start;gap:6px;margin-bottom:10px;}
-.tooltip .tt-context{font-size:13px;color:var(--ink-soft);font-style:italic;line-height:1.45;flex:1;
-  border-left:2px solid var(--line);padding-left:8px;}
-.tooltip .tt-context mark{background:var(--amber-soft);color:var(--ink);font-style:normal;font-weight:700;padding:0 2px;border-radius:2px;}
-.tt-speak-sm{width:22px !important;height:22px !important;font-size:11px !important;flex:none;}
-.tooltip .tt-status{font-size:12px;color:var(--ink-soft);margin-bottom:8px;}
+.tooltip .tt-word{font-family:'Lora',serif;font-size:calc(18px * var(--font-scale));color:var(--ink);}
+.tooltip .tt-speak{
+  background:var(--surface-2);border:1px solid var(--line);border-radius:999px;
+  width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;
+  font-size:11px;padding:0;color:var(--ink-soft);flex:none;
+}
+.tooltip .tt-speak:hover{background:var(--surface-3);color:var(--ink);}
+.tooltip .tt-lemma{font-size:11px;color:var(--ink-muted);margin-bottom:8px;}
+.tooltip .tt-ipa{font-family:'Lora',serif;font-style:italic;font-size:calc(13px * var(--font-scale));color:var(--amber);margin-bottom:8px;}
+.tooltip .tt-ipa.loading{font-family:inherit;font-style:normal;font-size:11px;color:var(--ink-muted);}
+.tooltip .tt-source{font-size:11px;color:var(--ink-muted);margin:-6px 0 10px;}
+.tooltip .tt-translation{font-family:'Lora',serif;font-size:calc(16px * var(--font-scale));color:var(--green);font-weight:600;margin-bottom:10px;}
+.tooltip .tt-freq{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;color:var(--ink-muted);}
+.tooltip .freq-bars{display:inline-flex;align-items:flex-end;gap:2px;height:13px;flex:none;}
+.tooltip .fbar{width:3px;background:var(--surface-3);border-radius:1px;}
+.tooltip .fbar.h1{height:4px;}.tooltip .fbar.h2{height:7px;}.tooltip .fbar.h3{height:10px;}.tooltip .fbar.h4{height:13px;}
+.tooltip .fbar.on{background:var(--amber);}
+.tooltip .tt-context-row{display:flex;align-items:flex-start;gap:6px;margin-bottom:6px;}
+.tooltip .tt-context{
+  font-family:'Lora',serif;font-style:italic;
+  font-size:calc(12px * var(--font-scale));color:var(--ink-soft);line-height:1.5;flex:1;
+  border-left:2px solid var(--line);padding-left:8px;
+}
+.tooltip .tt-context mark{background:var(--amber-bg);color:var(--amber);font-style:normal;font-weight:600;padding:0 2px;border-radius:2px;}
+.tooltip .tt-sentence-ru{
+  font-family:'Lora',serif;
+  font-size:calc(12px * var(--font-scale));
+  color:var(--green-dim);line-height:1.5;
+  border-left:2px solid var(--green-bg);padding-left:8px;margin-bottom:10px;
+}
+.tooltip .tt-sentence-ru mark{background:var(--green-bg);color:var(--green);font-style:normal;font-weight:600;padding:0 2px;border-radius:2px;}
+.tooltip .tt-sentence-ru.loading{color:var(--ink-muted);font-style:italic;}
+.tt-speak-sm{width:20px !important;height:20px !important;font-size:10px !important;flex:none;}
+.tooltip .tt-status{font-size:11px;color:var(--ink-muted);margin-bottom:8px;}
 .tooltip .tt-actions{display:flex;gap:6px;flex-wrap:wrap;}
-.tooltip .tt-actions button{font-size:12px;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--paper);}
-.tooltip .tt-actions button.primary{background:var(--fern);color:#fff;border-color:var(--fern);}
-.tooltip .tt-actions button.danger{color:var(--rust);}
-.tooltip input.tt-input{width:100%;padding:7px;border:1px solid var(--line);border-radius:6px;margin-bottom:8px;font-family:inherit;}
-.tooltip .tt-close{position:absolute;top:6px;right:8px;background:none;border:none;color:var(--ink-soft);font-size:14px;padding:2px 6px;}
-.tooltip .tt-hint{color:var(--ink-soft);margin-bottom:8px;}
+.tooltip .tt-actions button{
+  font-size:12px;padding:5px 10px;border-radius:var(--radius-sm);
+  border:1px solid var(--line);background:var(--surface-2);color:var(--ink-soft);font-family:inherit;
+}
+.tooltip .tt-actions button:hover{background:var(--surface-3);color:var(--ink);}
+.tooltip .tt-actions button.primary{background:var(--green-dim);color:#fff;border-color:var(--green-dim);}
+.tooltip .tt-actions button.primary:hover{background:var(--green);}
+.tooltip .tt-actions button.danger{color:var(--rust);border-color:transparent;background:transparent;}
+.tooltip .tt-actions button.danger:hover{background:var(--rust-bg);}
+.tooltip input.tt-input{
+  width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);
+  margin-bottom:8px;font-family:inherit;font-size:13px;background:var(--surface-2);color:var(--ink);
+}
+.tooltip input.tt-input:focus{border-color:var(--amber);}
+.tooltip .tt-close{position:absolute;top:6px;right:8px;background:none;border:none;color:var(--ink-muted);font-size:13px;padding:2px 6px;}
+.tooltip .tt-close:hover{color:var(--ink);}
+.tooltip .tt-hint{color:var(--ink-soft);margin-bottom:8px;font-size:12px;}
 
-/* ---------- Dictionary ---------- */
-.dict-tools{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
-.dict-tabs{display:flex;gap:8px;margin-bottom:18px;}
-.dict-tabs button{background:none;border:1px solid var(--line);border-radius:999px;padding:7px 16px;font-size:13px;color:var(--ink-soft);}
-.dict-tabs button.active{background:var(--fern);color:#fff;border-color:var(--fern);}
-.dict-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
-@media (max-width:760px){.dict-grid{grid-template-columns:repeat(2,1fr);}}
-@media (max-width:480px){.dict-grid{grid-template-columns:1fr;}}
-.dict-chip{background:var(--paper-card);border:1px solid var(--line);border-radius:8px;padding:12px;}
-.dict-chip .w{font-family:'PT Serif',serif;font-size:17px;}
-.dict-chip .t{color:var(--ink-soft);font-size:14px;margin:2px 0 8px;}
-.dict-chip .ex-row{display:flex;align-items:flex-start;gap:6px;margin-bottom:8px;}
-.dict-chip .ex{font-size:12px;color:var(--ink-soft);font-style:italic;line-height:1.4;flex:1;}
-.dict-chip .ex mark{background:var(--amber-soft);font-style:normal;font-weight:700;border-radius:2px;}
-.dict-chip .badge{font-size:11px;padding:2px 8px;border-radius:999px;display:inline-block;}
-.badge.learning{background:var(--amber-soft);color:#7A4F12;}
-.badge.known{background:#DCEADD;color:var(--fern-dark);}
-.dict-chip .chip-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
-.dict-chip .chip-actions button{font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:#fff;}
-.empty-state{padding:40px 20px;text-align:center;color:var(--ink-soft);background:var(--paper-card);border:1px dashed var(--line);border-radius:var(--radius);}
+/* ── DICTIONARY ──────────────────────────────────── */
+.dict-tools{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
+.dict-tabs{display:flex;gap:6px;margin-bottom:18px;}
+.dict-tabs button{background:none;border:1px solid var(--line);border-radius:999px;padding:5px 14px;font-size:12px;color:var(--ink-muted);font-family:inherit;}
+.dict-tabs button:hover{background:var(--surface-2);color:var(--ink);}
+.dict-tabs button.active{background:var(--amber-bg);color:var(--amber);border-color:var(--amber);}
+.dict-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+@media(max-width:760px){.dict-grid{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:480px){.dict-grid{grid-template-columns:1fr;}}
+
+.dict-chip{
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);padding:12px;transition:border-color .15s;
+}
+.dict-chip:hover{border-color:var(--ink-muted);}
+.dict-chip .w{font-family:'Lora',serif;font-size:calc(16px * var(--font-scale));color:var(--ink);}
+.dict-chip .t{color:var(--green);font-size:calc(13px * var(--font-scale));margin:3px 0 8px;font-family:'Lora',serif;}
+.dict-chip .ex-row{display:flex;align-items:flex-start;gap:5px;margin-bottom:8px;}
+.dict-chip .ex{font-family:'Lora',serif;font-style:italic;font-size:calc(11px * var(--font-scale));color:var(--ink-muted);line-height:1.45;flex:1;}
+.dict-chip .ex mark{background:var(--amber-bg);color:var(--amber);font-style:normal;font-weight:600;border-radius:2px;}
+.dict-chip .badge{font-size:10px;padding:2px 7px;border-radius:999px;display:inline-block;font-weight:500;}
+.badge.learning{background:var(--amber-bg);color:var(--amber);}
+.badge.known{background:var(--green-bg);color:var(--green);}
+.dict-chip .chip-actions{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;}
+.dict-chip .chip-actions button{font-size:11px;padding:3px 8px;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--surface-2);color:var(--ink-muted);font-family:inherit;}
+.dict-chip .chip-actions button:hover{background:var(--surface-3);color:var(--ink);}
+.empty-state{padding:48px 20px;text-align:center;color:var(--ink-muted);background:var(--surface);border:1px dashed var(--line);border-radius:var(--radius);}
 .empty-state .btn{margin-top:14px;}
 
-/* ---------- Practice ---------- */
-.practice-wrap{max-width:420px;margin:0 auto;text-align:center;}
-.flip-card{background:var(--paper-card);border:1px solid var(--line);border-radius:var(--radius);padding:50px 24px;box-shadow:var(--shadow);
-  min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-family:'PT Serif',serif;font-size:28px;margin-bottom:18px;}
-.flip-card .translation{color:var(--fern-dark);font-size:22px;}
-.flip-card .card-context-row{display:flex;align-items:flex-start;gap:8px;max-width:340px;}
-.flip-card .example{font-size:13px;color:var(--ink-soft);font-style:italic;line-height:1.4;flex:1;}
-.flip-card .example mark{background:var(--amber-soft);font-style:normal;font-weight:700;border-radius:2px;}
+/* ── PRACTICE ────────────────────────────────────── */
+.practice-wrap{max-width:440px;margin:0 auto;text-align:center;}
+.flip-card{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:48px 28px;min-height:180px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  font-family:'Lora',serif;font-size:calc(26px * var(--font-scale));margin-bottom:18px;color:var(--ink);
+}
+.flip-card .translation{font-family:'Lora',serif;font-size:calc(20px * var(--font-scale));color:var(--green);}
+.flip-card .card-context-row{display:flex;align-items:flex-start;gap:8px;max-width:360px;}
+.flip-card .example{font-family:'Lora',serif;font-style:italic;font-size:calc(13px * var(--font-scale));color:var(--ink-muted);line-height:1.5;flex:1;}
+.flip-card .context-translation{font-family:'Lora',serif;font-size:calc(13px * var(--font-scale));color:var(--green-dim);line-height:1.5;max-width:360px;}
+.flip-card .context-translation.loading{color:var(--ink-muted);font-style:italic;}
+.flip-card .example mark{background:var(--amber-bg);color:var(--amber);font-style:normal;font-weight:600;border-radius:2px;}
 .practice-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
-.practice-progress{margin-top:14px;font-size:13px;color:var(--ink-soft);}
+.practice-progress{margin-top:14px;font-size:12px;color:var(--ink-muted);}
 
-footer{text-align:center;padding:24px;color:var(--ink-soft);font-size:13px;border-top:1px solid var(--line);}
+/* ── FOOTER ──────────────────────────────────────── */
+footer{text-align:center;padding:20px;color:var(--ink-muted);font-size:11px;border-top:1px solid var(--line);}
 
-/* ---------- Toast ---------- */
+/* ── TOAST / FLOATING ─────────────────────────────── */
 #toastLayer{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:80;display:flex;flex-direction:column;gap:8px;align-items:center;}
-.toast{background:var(--fern-dark);color:#fff;padding:10px 18px;border-radius:8px;font-size:14px;box-shadow:0 6px 18px rgba(30,42,34,0.25);
-  opacity:1;transition:opacity .3s, transform .3s;}
-.toast.error{background:var(--rust);}
-.toast.out{opacity:0;transform:translateY(6px);}
-
+.floating-stop{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:70;
+  background:var(--surface);color:var(--ink);border:1px solid var(--line);
+  border-radius:999px;padding:11px 22px;font-size:13px;font-weight:600;
+  box-shadow:var(--shadow-lg);font-family:inherit;
+}
+.floating-stop:hover{background:var(--rust-bg);color:var(--rust);border-color:var(--rust);}
+.toast{
+  background:var(--surface-2);color:var(--ink);border:1px solid var(--line);
+  padding:9px 16px;border-radius:var(--radius-sm);font-size:12px;box-shadow:var(--shadow);
+  opacity:1;transition:opacity .25s,transform .25s;
+}
+.toast.error{background:var(--rust-bg);color:var(--rust);border-color:var(--rust);}
+.toast.out{opacity:0;transform:translateY(4px);}
 .storage-warning{
-  position:fixed;top:0;left:0;right:0;z-index:90;background:var(--rust);color:#fff;
-  text-align:center;padding:10px 40px;font-size:13px;line-height:1.4;
+  position:fixed;top:0;left:0;right:0;z-index:90;
+  background:var(--rust-bg);color:var(--rust);border-bottom:1px solid var(--rust);
+  text-align:center;padding:10px 40px;font-size:12px;line-height:1.5;
 }
-.storage-warning button{
-  position:absolute;top:6px;right:10px;background:none;border:none;color:#fff;font-size:14px;padding:4px 8px;
-}
+.storage-warning button{position:absolute;top:6px;right:10px;background:none;border:none;color:var(--rust);font-size:14px;padding:4px 8px;}
 
-@media (prefers-reduced-motion:reduce){*{transition:none !important;}}
+/* ── LIGHT THEME ─────────────────────────────────────────────
+   Warm paper aesthetic — original ReadFox feel.
+   Applied via [data-theme="light"] on <html>.
+   ─────────────────────────────────────────────────────────── */
+[data-theme="light"]{
+  --bg:#EEF1E6;
+  --surface:#FBFAF4;
+  --surface-2:#F3F5EC;
+  --surface-3:#EAF0E4;
+  --line:#D7DCC6;
+  --ink:#1E2A22;
+  --ink-soft:#566153;
+  --ink-muted:#7E8E7A;
+  --amber:#C07A1A;
+  --amber-dim:#9A6015;
+  --amber-bg:rgba(192,122,26,.12);
+  --amber-bg2:rgba(192,122,26,.06);
+  --green:#2C6B3E;
+  --green-dim:#235432;
+  --green-bg:rgba(44,107,62,.10);
+  --rust:#B5483D;
+  --rust-bg:rgba(181,72,61,.10);
+  --shadow:0 2px 10px rgba(30,42,34,0.08);
+  --shadow-lg:0 8px 24px rgba(30,42,34,0.14);
+}
+[data-theme="light"] .word.word-speaking{background:var(--amber);color:#fff;}
+[data-theme="light"] .nav button.active{background:var(--green);color:#fff;}
+[data-theme="light"] .site-header{background:var(--surface);}
+[data-theme="light"] .custom-form input,[data-theme="light"] .custom-form textarea{background:#fff;}
+
+/* Theme toggle button */
+.theme-toggle{
+  background:none;border:1px solid var(--line);border-radius:var(--radius-sm);
+  width:28px;height:28px;font-size:14px;color:var(--ink-soft);padding:0;flex:none;cursor:pointer;
+}
+.theme-toggle:hover{background:var(--surface-2);color:var(--ink);}
+
+@media(prefers-reduced-motion:reduce){*{transition:none !important;}}
 </style>
+
 </head>
 <body>
 
@@ -245,6 +423,7 @@ footer{text-align:center;padding:24px;color:var(--ink-soft);font-size:13px;borde
   <div class="header-stats">
     <span>В изучении: <b id="statLearning">0</b></span>
     <span>Изучено: <b id="statKnown">0</b></span>
+    <button class="theme-toggle" id="themeToggleBtn" aria-label="Сменить тему" title="Светлая / тёмная тема">☀</button>
     <button class="gear-btn" id="voiceSettingsBtn" aria-label="Настройки голоса" title="Настройки голоса">⚙</button>
   </div>
 </header>
@@ -327,6 +506,7 @@ footer{text-align:center;padding:24px;color:var(--ink-soft);font-size:13px;borde
 
 <div id="tooltipLayer"></div>
 <div id="toastLayer"></div>
+<button id="floatingStopBtn" class="floating-stop hidden" aria-label="Остановить чтение">⏹ Остановить чтение</button>
 
 <script>
 (function(){
@@ -391,6 +571,7 @@ The traveler thanked her with tears of relief, offering whatever he could give i
 ];
 
 const LEVEL_LABEL = {beginner:'Начальный', intermediate:'Средний', advanced:'Продвинутый', custom:'Свой текст'};
+const LEVEL_SHORT = {beginner:'нач', intermediate:'сред', advanced:'прод', custom:'свой'};
 const LEVEL_DOTS = {beginner:1, intermediate:2, advanced:3, custom:0};
 
 /* ============================================================
@@ -745,7 +926,7 @@ function frequencyInfo(key){
    СОСТОЯНИЕ И ХРАНИЛИЩЕ
    ============================================================ */
 const STORAGE_KEY = "readfox-state";
-let state = { userWords:{}, customTexts:[], readTextIds:[], settings:{voiceName:null, fontSize:19} };
+let state = { userWords:{}, customTexts:[], readTextIds:[], settings:{voiceName:null, fontSize:19, theme:"dark"} };
 let currentText = null;
 let currentFilter = "all";
 let practiceQueue = [];
@@ -779,8 +960,9 @@ async function loadState(){
       state.userWords = parsed.userWords || {};
       state.customTexts = parsed.customTexts || [];
       state.readTextIds = parsed.readTextIds || [];
-      state.settings = parsed.settings || {voiceName:null, fontSize:19};
+      state.settings = parsed.settings || {voiceName:null, fontSize:19, theme:"dark"};
       if(typeof state.settings.fontSize !== "number") state.settings.fontSize = 19;
+      if(!state.settings.theme) state.settings.theme = "dark";
     }
   }catch(e){
     // ключа пока нет или хранилище недоступно — используем значения по умолчанию
@@ -1063,9 +1245,6 @@ function updateStatsUI(){
   document.getElementById("statTextsCount").textContent = state.readTextIds.length;
 }
 
-/* ============================================================
-   БИБЛИОТЕКА ТЕКСТОВ
-   ============================================================ */
 function allTexts(){
   return TEXTS.concat(state.customTexts);
 }
@@ -1243,18 +1422,18 @@ function addWord(key, translation, status, example){
   refreshWordVisuals();
   updateStatsUI();
 }
-function addPhrase(text, translation){
+function addPhrase(text, translation, example){
   const key = text.trim().toLowerCase();
   const prev = state.userWords[key];
   state.userWords[key] = {
     translation,
     status: "learning",
     addedAt: prev ? prev.addedAt : Date.now(),
-    example: "",
+    example: example || (prev && prev.example) || "",
     type: "phrase",
     source: "custom"
   };
-  saveState();
+  saveStateNow(); // немедленно, иначе фраза может не сохраниться при быстрых действиях
   refreshWordVisuals();
   updateStatsUI();
 }
@@ -1338,6 +1517,8 @@ function clearSpeakingHighlight(){
 function resetReadAloudButton(){
   const btn = document.getElementById("readAloudBtn");
   if(btn){ btn.textContent = "🔊 Слушать текст"; btn.dataset.playing = "0"; }
+  const floatBtn = document.getElementById("floatingStopBtn");
+  if(floatBtn) floatBtn.classList.add("hidden");
   clearSpeakingHighlight();
 }
 function playAudioUrl(url, fallbackText){
@@ -1356,6 +1537,18 @@ function stopReading(){
   try{ if("speechSynthesis" in window) window.speechSynthesis.cancel(); }catch(e){}
   resetReadAloudButton();
 }
+
+// Отличаем прокрутку, которую вызвали мы сами (чтобы показать читаемое
+// слово), от прокрутки, которую сделал пользователь вручную. Если человек
+// прокручивает сам — например, чтобы подняться и нажать «Остановить» —
+// на несколько секунд перестаём «возвращать» его вниз.
+let lastProgrammaticScrollAt = 0;
+let userScrollSuspendUntil = 0;
+window.addEventListener("scroll", ()=>{
+  if(Date.now() - lastProgrammaticScrollAt < 700) return; // это была наша прокрутка
+  userScrollSuspendUntil = Date.now() + 4000;
+}, {passive:true});
+
 function readTextAloud(text){
   const btn = document.getElementById("readAloudBtn");
   if(!("speechSynthesis" in window)){
@@ -1392,7 +1585,12 @@ function readTextAloud(text){
     const el = wordSpans[idx];
     if(el){
       el.classList.add("word-speaking");
-      el.scrollIntoView({behavior:"smooth", block:"nearest"});
+      // Подсветка обновляется всегда; а вот навязчивую прокрутку приостанавливаем,
+      // если человек только что сам листал страницу (например, тянется к «Стоп»).
+      if(Date.now() >= userScrollSuspendUntil){
+        lastProgrammaticScrollAt = Date.now();
+        el.scrollIntoView({behavior:"smooth", block:"nearest"});
+      }
     }
   }
 
@@ -1411,21 +1609,44 @@ function readTextAloud(text){
   utterances[utterances.length - 1].onerror = resetReadAloudButton;
   utterances.forEach(u=>window.speechSynthesis.speak(u));
   if(btn){ btn.textContent = "⏹ Остановить"; btn.dataset.playing = "1"; }
+  // Плавающая кнопка «Стоп» — всегда на экране, не нужно прокручивать
+  // вверх к панели чтения, чтобы остановить озвучку.
+  const floatBtn = document.getElementById("floatingStopBtn");
+  if(floatBtn) floatBtn.classList.remove("hidden");
 }
 
 /* ============================================================
-   РАЗМЕР ШРИФТА ЧИТАЕМОГО ТЕКСТА
+   РАЗМЕР ШРИФТА — применяется сразу везде, где есть читаемый текст
+   (чтение, подсказки, словарь, тренировка), а не только в самом тексте.
    ============================================================ */
-const FONT_MIN = 15, FONT_MAX = 30, FONT_STEP = 2;
+const FONT_BASE = 19, FONT_MIN = 15, FONT_MAX = 30, FONT_STEP = 2;
 function applyFontSize(){
-  const size = (state.settings && state.settings.fontSize) || 19;
+  const size = (state.settings && state.settings.fontSize) || FONT_BASE;
+  const scale = size / FONT_BASE;
   document.documentElement.style.setProperty("--reader-font-size", size + "px");
+  document.documentElement.style.setProperty("--font-scale", scale.toFixed(3));
 }
 function changeFontSize(delta){
-  let size = ((state.settings && state.settings.fontSize) || 19) + delta;
+  let size = ((state.settings && state.settings.fontSize) || FONT_BASE) + delta;
   size = Math.max(FONT_MIN, Math.min(FONT_MAX, size));
   state.settings.fontSize = size;
   applyFontSize();
+  saveState();
+}
+
+/* ============================================================
+   ТЕМА (СВЕТЛАЯ / ТЁМНАЯ)
+   ============================================================ */
+function applyTheme(){
+  const theme = (state.settings && state.settings.theme) || "dark";
+  document.documentElement.setAttribute("data-theme", theme);
+  const btn = document.getElementById("themeToggleBtn");
+  if(btn) btn.textContent = theme === "dark" ? "☀" : "🌙";
+}
+function toggleTheme(){
+  const current = (state.settings && state.settings.theme) || "dark";
+  state.settings.theme = current === "dark" ? "light" : "dark";
+  applyTheme();
   saveState();
 }
 
@@ -1560,22 +1781,24 @@ async function fetchTranscription(word){
 
 let tooltipRequestId = 0;
 
-function showTooltip(el, token){
+function showTooltip(el, token, forcedSentence){
   const reqId = ++tooltipRequestId;
   let info = lookupWord(token);
   const key = info ? info.key : token.toLowerCase();
   const layer = document.getElementById("tooltipLayer");
   const sIdx = el.dataset ? el.dataset.sidx : undefined;
-  const sentence = (sIdx !== undefined && readerSentences[sIdx]) ? readerSentences[sIdx] : null;
+  const sentence = forcedSentence || ((sIdx !== undefined && readerSentences[sIdx]) ? readerSentences[sIdx] : null);
 
   // Состояние, которое со временем дополняется асинхронными ответами API
   const view = {
     info,
     fromApi: false,
-    apiStatus: info ? "skip" : "loading",   // skip | loading | failed | (перевод не нужен / не нужен запрос)
+    apiStatus: info ? "skip" : "loading",
     ipa: null,
-    ipaStatus: "loading",                   // loading | done | failed
-    audioUrl: (transcriptionCache[key.toLowerCase()] && transcriptionCache[key.toLowerCase()].audio) || null
+    ipaStatus: "loading",
+    audioUrl: (transcriptionCache[key.toLowerCase()] && transcriptionCache[key.toLowerCase()].audio) || null,
+    sentenceTranslation: null,   // перевод контекстного предложения, добавляется асинхронно
+    sentenceTranslationStatus: sentence ? "loading" : "skip"
   };
   if(view.audioUrl) playAudioUrl(view.audioUrl, token); else speak(token);
 
@@ -1619,6 +1842,13 @@ function showTooltip(el, token){
         <div class="tt-context">${highlightInSentence(sentence, token)}</div>
         <button class="tt-speak tt-speak-sm" id="ttSpeakContext" aria-label="Прочитать предложение" title="Прочитать предложение">🔊</button>
       </div>`;
+      if(view.sentenceTranslationStatus === "loading"){
+        inner += `<div class="tt-sentence-ru loading">переводим предложение…</div>`;
+      } else if(view.sentenceTranslation){
+        // Подсвечиваем перевод самого слова внутри перевода предложения, если оно там встречается
+        const wordRu = view.info ? view.info.translation.split(/[,，;(]/)[0].trim() : null;
+        inner += `<div class="tt-sentence-ru">${wordRu ? highlightInSentence(view.sentenceTranslation, wordRu) : escapeHtml(view.sentenceTranslation)}</div>`;
+      }
     }
 
     if(view.info){
@@ -1733,12 +1963,21 @@ function showTooltip(el, token){
       paint();
     });
   }
+
+  // Перевод контекстного предложения — запрашиваем всегда, если предложение есть.
+  if(sentence){
+    fetchApiTranslation(sentence).then(translated=>{
+      view.sentenceTranslationStatus = "done";
+      view.sentenceTranslation = translated || null;
+      paint();
+    });
+  }
 }
 
 /* ============================================================
    ВЫДЕЛЕНИЕ НЕСКОЛЬКИХ СЛОВ (ФРАЗА)
    ============================================================ */
-function showPhraseTooltip(range, text){
+function showPhraseTooltip(range, text, sentence){
   const reqId = ++tooltipRequestId;
   const key = text.toLowerCase();
   const existing = state.userWords[key];
@@ -1751,6 +1990,12 @@ function showPhraseTooltip(range, text){
     <button class="tt-speak" id="ttSpeak" aria-label="Произнести фразу" title="Произнести фразу">🔊</button></div>`;
   inner += `<div class="tt-lemma">слова по отдельности (нажмите для перевода):</div>`;
   inner += `<div class="tt-phrase-words">${buildLineHtml(text)}</div>`;
+  if(sentence && sentence.toLowerCase() !== text.toLowerCase()){
+    inner += `<div class="tt-context-row">
+      <div class="tt-context">${highlightInSentence(sentence, text)}</div>
+      <button class="tt-speak tt-speak-sm" id="ttSpeakContext" aria-label="Прочитать предложение" title="Прочитать предложение">🔊</button>
+    </div>`;
+  }
 
   if(existing){
     inner += `<div class="tt-status">Сохранено как фраза, статус: ${existing.status==="known" ? "изучено" : "в изучении"}</div>
@@ -1780,6 +2025,8 @@ function showPhraseTooltip(range, text){
 
   document.getElementById("ttClose").addEventListener("click", hideTooltip);
   document.getElementById("ttSpeak").addEventListener("click", ()=>speak(text));
+  const speakContext = document.getElementById("ttSpeakContext");
+  if(speakContext) speakContext.addEventListener("click", ()=>speak(sentence));
   const toggleBtn = document.getElementById("ttPhraseToggle");
   if(toggleBtn) toggleBtn.addEventListener("click", ()=>{
     const newStatus = existing.status==="known" ? "learning" : "known";
@@ -1800,7 +2047,7 @@ function showPhraseTooltip(range, text){
     const submit = ()=>{
       const val = input.value.trim();
       if(!val) return;
-      addPhrase(text, val);
+      addPhrase(text, val, sentence);
       showToast("Фраза добавлена в «В изучении» ✓");
       hideTooltip();
     };
@@ -1904,7 +2151,9 @@ function buildPracticeQueue(){
   practiceIndex = 0;
   practiceRevealed = false;
 }
+let practiceRequestId = 0;
 function renderPractice(){
+  const reqId = ++practiceRequestId;
   const content = document.getElementById("practiceContent");
   if(practiceQueue.length === 0){
     content.innerHTML = `<div class="empty-state">
@@ -1928,6 +2177,7 @@ function renderPractice(){
           <button class="tt-speak tt-speak-sm" id="pSpeakContext" aria-label="Прочитать предложение" title="Прочитать предложение">🔊</button>
         </div>` : ""}
         ${practiceRevealed ? `<div class="translation">${escapeHtml(item.translation)}</div>` : ""}
+        ${practiceRevealed && item.example ? `<div class="context-translation loading" id="contextTranslation">переводим предложение…</div>` : ""}
       </div>
       <div class="practice-actions">
         ${practiceRevealed
@@ -1940,6 +2190,25 @@ function renderPractice(){
   document.getElementById("pSpeak").addEventListener("click", ()=>speak(item.key));
   const speakContext = document.getElementById("pSpeakContext");
   if(speakContext) speakContext.addEventListener("click", ()=>speak(item.example));
+  if(practiceRevealed && item.example){
+    fetchApiTranslation(item.example).then(translated=>{
+      if(reqId !== practiceRequestId) return;
+      const el = document.getElementById("contextTranslation");
+      if(!el) return;
+      if(translated){
+        // Подсвечиваем перевод слова внутри перевода предложения, если он там есть
+        const wordRu = item.translation ? item.translation.split(/[,，;(]/)[0].trim() : null;
+        if(wordRu){
+          el.innerHTML = highlightInSentence(translated, wordRu);
+        } else {
+          el.textContent = translated;
+        }
+        el.classList.remove("loading");
+      } else {
+        el.remove();
+      }
+    });
+  }
   const reveal = document.getElementById("pReveal");
   if(reveal) reveal.addEventListener("click", ()=>{ practiceRevealed = true; renderPractice(); });
   const remember = document.getElementById("pRemember");
@@ -1991,6 +2260,7 @@ function wireGlobalEvents(){
       readTextAloud(currentText.body);
     }
   });
+  document.getElementById("floatingStopBtn").addEventListener("click", stopReading);
   document.getElementById("heroStart").addEventListener("click", ()=>{
     document.getElementById("libraryGrid").scrollIntoView({behavior:"smooth", block:"start"});
   });
@@ -2016,6 +2286,7 @@ function wireGlobalEvents(){
     e.stopPropagation();
     toggleVoicePanel();
   });
+  document.getElementById("themeToggleBtn").addEventListener("click", toggleTheme);
 
   document.addEventListener("click", (e)=>{
     if(!e.target.closest("#voicePanel, #voiceSettingsBtn")){
@@ -2034,16 +2305,33 @@ function wireGlobalEvents(){
     if(!e.target.closest("#tooltipLayer")) hideTooltip();
   });
 
-  document.addEventListener("mouseup", ()=>{
-    setTimeout(handleSelectionUp, 0);
-  });
-  // На телефоне выделение часто тянут за «ручки» нативного UI — mouseup может
-  // не сработать воврем. selectionchange срабатывает в любом случае; ждём,
-  // когда выделение перестанет меняться (пользователь закончил тянуть).
+  // Считаем, удерживается ли сейчас мышь/палец — это нужно, чтобы не
+  // показывать подсказку и не озвучивать слово ПОКА пользователь ещё
+  // тянет выделение (раньше это срабатывало на любую короткую паузу).
+  let activePointers = 0;
+  const onPointerDown = ()=>{ activePointers++; };
+  const onPointerUp = ()=>{
+    activePointers = Math.max(0, activePointers - 1);
+    setTimeout(handleSelectionUp, 30);
+  };
+  document.addEventListener("mousedown", onPointerDown);
+  document.addEventListener("mouseup", onPointerUp);
+  document.addEventListener("touchstart", onPointerDown, {passive:true});
+  document.addEventListener("touchend", onPointerUp);
+  document.addEventListener("touchcancel", ()=>{ activePointers = Math.max(0, activePointers - 1); });
+
+  // На телефоне выделение иногда тянут за «ручки» нативного UI, для которых
+  // touchend может не дойти до наших обработчиков — selectionchange ловит
+  // это в любом случае. Но запускаем подсказку из него только если ни одна
+  // кнопка/палец сейчас не зажаты — иначе именно это и озвучивало слово
+  // посреди выделения.
   let selectionSettleTimer = null;
   document.addEventListener("selectionchange", ()=>{
     clearTimeout(selectionSettleTimer);
-    selectionSettleTimer = setTimeout(handleSelectionUp, 400);
+    selectionSettleTimer = setTimeout(()=>{
+      if(activePointers > 0) return; // всё ещё тянут — рано
+      handleSelectionUp();
+    }, 450);
   });
   // Подавляем нативное контекстное меню (копировать/найти и т.п.) внутри
   // читаемого текста — вместо него показываем свою подсказку.
@@ -2065,28 +2353,43 @@ function isSelectionInsideContent(sel){
   const container = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
   return !!(container && container.closest(".reader-body, .demo-card"));
 }
+// Находит предложение-контекст, в котором началось выделение, используя
+// data-sidx ближайшего слова — тот же индекс, что заполняется при рендере текста.
+function findContainingSentence(sel){
+  if(!sel.rangeCount) return null;
+  const node = sel.getRangeAt(0).startContainer;
+  const el = node.nodeType === 1 ? node : node.parentElement;
+  const wordEl = el ? el.closest(".word[data-sidx]") : null;
+  if(!wordEl) return null;
+  const sidx = wordEl.dataset.sidx;
+  return readerSentences[sidx] || null;
+}
 function handleSelectionUp(){
   const sel = window.getSelection();
   if(!sel || sel.isCollapsed) return;
   const text = sel.toString().trim();
   if(!text || !isSelectionInsideContent(sel)) return;
-  // Сразу запоминаем положение и снимаем нативное выделение — это убирает
-  // системное меню (копировать/найти и т.п.), которое мешает на телефоне.
+  // Запоминаем контекстное предложение и положение ДО того, как снимем
+  // выделение — иначе данные о диапазоне будут потеряны.
+  const sentence = findContainingSentence(sel);
   const rect = sel.getRangeAt(0).getBoundingClientRect();
   const anchor = { getBoundingClientRect: () => rect };
+  // Снимаем нативное выделение — это убирает системное меню
+  // (копировать/найти и т.п.), которое мешает на телефоне.
   sel.removeAllRanges();
   const tokens = text.match(WORD_RE) || [];
   if(tokens.length <= 1){
     // выделено фактически одно слово — показываем привычную подсказку для слова
-    if(tokens.length === 1) showTooltip(anchor, tokens[0]);
+    if(tokens.length === 1) showTooltip(anchor, tokens[0], sentence);
     return;
   }
-  showPhraseTooltip(anchor, text);
+  showPhraseTooltip(anchor, text, sentence);
 }
 
 
 async function init(){
   await loadState();
+  applyTheme();
   applyFontSize();
   renderLibrary();
   renderDemoSentence();
