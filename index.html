@@ -59,27 +59,59 @@ button:focus-visible,.word:focus-visible,input:focus-visible,textarea:focus-visi
 .site-header{
   display:flex;align-items:center;justify-content:space-between;gap:12px;
   padding:0 24px;height:52px;border-bottom:1px solid var(--line);
-  background:var(--surface);position:sticky;top:0;z-index:30;flex-wrap:wrap;
+  background:var(--surface);position:sticky;top:0;z-index:30;
 }
 .logo{
   display:flex;align-items:center;gap:8px;
   font-family:'Lora',serif;font-size:17px;font-weight:700;color:var(--ink);
+  flex-shrink:0;
 }
 .logo .mark{font-size:19px;}
-.nav{display:flex;gap:2px;}
+.nav{display:flex;gap:2px;flex:1;justify-content:center;}
 .nav button{
   background:none;border:none;padding:6px 12px;border-radius:var(--radius-sm);
-  font-size:13px;color:var(--ink-soft);
+  font-size:13px;color:var(--ink-soft);white-space:nowrap;
 }
 .nav button:hover{background:var(--surface-3);color:var(--ink);}
 .nav button.active{background:var(--amber-bg);color:var(--amber);}
-.header-stats{display:flex;align-items:center;gap:16px;font-size:12px;color:var(--ink-muted);white-space:nowrap;}
+.header-stats{display:flex;align-items:center;gap:16px;font-size:12px;color:var(--ink-muted);white-space:nowrap;flex-shrink:0;}
 .header-stats b{color:var(--amber);font-weight:600;}
+.header-controls{display:flex;align-items:center;gap:6px;flex-shrink:0;}
 .gear-btn{
   background:none;border:1px solid var(--line);border-radius:var(--radius-sm);
   width:28px;height:28px;font-size:13px;color:var(--ink-soft);padding:0;flex:none;
 }
 .gear-btn:hover{background:var(--surface-3);color:var(--ink);}
+
+/* ── MOBILE HEADER ───────────────────────────────── */
+@media(max-width:640px){
+  .site-header{
+    height:auto;flex-wrap:wrap;padding:10px 16px 0;gap:0;
+    border-bottom:1px solid var(--line);
+  }
+  /* Строка 1: логотип + иконки справа */
+  .site-header > .logo{ order:1; flex:1; }
+  .site-header > .header-controls{ order:2; }
+  /* Статистику убираем: она видна в плашке на главной, в шапке только мешает */
+  .site-header > .header-stats{ display:none; }
+  /* Строка 2: навигация на всю ширину */
+  .nav{
+    order:3;
+    width:100%;
+    justify-content:flex-start;
+    border-top:1px solid var(--line-soft, var(--line));
+    padding:4px 0 6px;
+    gap:0;
+    overflow-x:auto;
+    scrollbar-width:none;
+  }
+  .nav::-webkit-scrollbar{display:none;}
+  .nav button{
+    font-size:12px;
+    padding:6px 10px;
+    flex-shrink:0;
+  }
+}
 
 .voice-panel{
   position:absolute;z-index:60;background:var(--surface);
@@ -103,6 +135,7 @@ button:focus-visible,.word:focus-visible,input:focus-visible,textarea:focus-visi
 
 /* ── LAYOUT ──────────────────────────────────────── */
 main{max-width:1000px;margin:0 auto;padding:36px 24px 100px;}
+@media(max-width:640px){main{padding:20px 14px 90px;}}
 
 /* ── HERO ────────────────────────────────────────── */
 .hero{display:grid;grid-template-columns:1.1fr 1fr;gap:40px;align-items:center;padding:4px 0 48px;}
@@ -206,9 +239,11 @@ main{max-width:1000px;margin:0 auto;padding:36px 24px 100px;}
 .reader-top{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap;}
 .back-btn{
   background:none;border:1px solid var(--line);border-radius:var(--radius-sm);
-  padding:6px 12px;font-size:12px;color:var(--ink-soft);font-family:inherit;
+  padding:6px 12px;font-size:12px;color:var(--ink-soft);font-family:inherit;white-space:nowrap;flex-shrink:0;
 }
 .back-btn:hover{background:var(--surface-2);color:var(--ink);}
+.reader-title{font-size:20px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.reader-controls{display:flex;align-items:center;gap:8px;flex-shrink:0;}
 .font-size-control{display:flex;gap:3px;}
 .font-size-control button{
   background:none;border:1px solid var(--line);border-radius:var(--radius-sm);
@@ -216,13 +251,25 @@ main{max-width:1000px;margin:0 auto;padding:36px 24px 100px;}
   color:var(--ink-soft);padding:0;font-family:inherit;
 }
 .font-size-control button:hover{background:var(--surface-2);color:var(--ink);}
-.reader-title{font-size:20px;flex:1;}
-.reader-progress{font-size:12px;color:var(--ink-muted);}
+.reader-progress{font-size:12px;color:var(--ink-muted);width:100%;}
+
+@media(max-width:640px){
+  .reader-top{gap:8px;margin-bottom:14px;}
+  /* Строка 1: кнопка назад + название */
+  .back-btn{font-size:12px;padding:5px 10px;}
+  .reader-title{font-size:17px;}
+  /* Строка 2: контролы тянутся на всю ширину */
+  .reader-controls{width:100%;justify-content:space-between;}
+  .reader-progress{font-size:11px;}
+}
+
+@media(max-width:640px){.reader-body{padding:20px 16px;}}
+@media(min-width:641px) and (max-width:900px){.reader-body{padding:28px 32px;}}
+
 .reader-body{
   background:var(--surface);border:1px solid var(--line);
   border-radius:var(--radius);padding:36px 44px;-webkit-touch-callout:none;
 }
-@media(max-width:600px){.reader-body{padding:22px 18px;}}
 .reader-body p{
   font-family:'Lora',Georgia,serif;
   font-size:var(--reader-font-size);
@@ -299,6 +346,7 @@ main{max-width:1000px;margin:0 auto;padding:36px 24px 100px;}
 
 /* ── DICTIONARY ──────────────────────────────────── */
 .dict-tools{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
+@media(max-width:480px){.dict-tools .btn{flex:1;justify-content:center;}}
 .dict-tabs{display:flex;gap:6px;margin-bottom:18px;}
 .dict-tabs button{background:none;border:1px solid var(--line);border-radius:999px;padding:5px 14px;font-size:12px;color:var(--ink-muted);font-family:inherit;}
 .dict-tabs button:hover{background:var(--surface-2);color:var(--ink);}
@@ -423,6 +471,8 @@ footer{text-align:center;padding:20px;color:var(--ink-muted);font-size:11px;bord
   <div class="header-stats">
     <span>В изучении: <b id="statLearning">0</b></span>
     <span>Изучено: <b id="statKnown">0</b></span>
+  </div>
+  <div class="header-controls">
     <button class="theme-toggle" id="themeToggleBtn" aria-label="Сменить тему" title="Светлая / тёмная тема">☀</button>
     <button class="gear-btn" id="voiceSettingsBtn" aria-label="Настройки голоса" title="Настройки голоса">⚙</button>
   </div>
@@ -462,18 +512,20 @@ footer{text-align:center;padding:20px;color:var(--ink-muted);font-size:11px;bord
     <div class="reader-top">
       <button class="back-btn" id="readerBack">← К текстам</button>
       <h2 class="reader-title" id="readerTitle"></h2>
-      <div class="font-size-control">
-        <button id="fontDecrease" aria-label="Уменьшить шрифт" title="Уменьшить шрифт">A-</button>
-        <button id="fontIncrease" aria-label="Увеличить шрифт" title="Увеличить шрифт">A+</button>
+      <div class="reader-controls">
+        <div class="font-size-control">
+          <button id="fontDecrease" aria-label="Уменьшить шрифт" title="Уменьшить шрифт">A-</button>
+          <button id="fontIncrease" aria-label="Увеличить шрифт" title="Увеличить шрифт">A+</button>
+        </div>
+        <button class="back-btn" id="readAloudBtn" data-playing="0">🔊 Слушать</button>
       </div>
-      <button class="back-btn" id="readAloudBtn" data-playing="0">🔊 Слушать текст</button>
       <span class="reader-progress" id="readerProgress"></span>
     </div>
     <div class="reader-body" id="readerBody"></div>
     <div class="reader-legend">
-      <span><span class="legend-swatch" style="background:var(--amber-soft);border:1px solid var(--amber);"></span>В изучении</span>
-      <span><span class="legend-swatch" style="background:#DCEADD;"></span>Изучено</span>
-      <span><span class="legend-swatch" style="border-bottom:1.5px dotted #8FAE93;background:transparent;"></span>Есть перевод — нажмите</span>
+      <span><span class="legend-swatch" style="background:var(--amber-bg);border:1px solid var(--amber);"></span>В изучении</span>
+      <span><span class="legend-swatch" style="background:var(--green-bg);border:1px solid var(--green-dim);"></span>Изучено</span>
+      <span><span class="legend-swatch" style="border-bottom:1.5px dotted var(--ink-muted);background:transparent;"></span>Есть перевод — нажмите</span>
     </div>
   </section>
 
