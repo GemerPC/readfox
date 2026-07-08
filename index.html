@@ -375,21 +375,113 @@ main{max-width:1000px;margin:0 auto;padding:36px 24px 100px;}
 .empty-state .btn{margin-top:14px;}
 
 /* ── PRACTICE ────────────────────────────────────── */
-.practice-wrap{max-width:440px;margin:0 auto;text-align:center;}
-.flip-card{
-  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
-  padding:48px 28px;min-height:180px;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
-  font-family:'Lora',serif;font-size:calc(26px * var(--font-scale));margin-bottom:18px;color:var(--ink);
+/* ── PRACTICE — 3D FLIP CARD ─────────────────────── */
+.practice-wrap{max-width:480px;margin:0 auto;text-align:center;}
+.fc-progress{
+  display:flex;justify-content:space-between;align-items:center;
+  font-size:12px;color:var(--ink-muted);margin-bottom:12px;
 }
-.flip-card .translation{font-family:'Lora',serif;font-size:calc(20px * var(--font-scale));color:var(--green);}
-.flip-card .card-context-row{display:flex;align-items:flex-start;gap:8px;max-width:360px;}
-.flip-card .example{font-family:'Lora',serif;font-style:italic;font-size:calc(13px * var(--font-scale));color:var(--ink-muted);line-height:1.5;flex:1;}
-.flip-card .context-translation{font-family:'Lora',serif;font-size:calc(13px * var(--font-scale));color:var(--green-dim);line-height:1.5;max-width:360px;}
-.flip-card .context-translation.loading{color:var(--ink-muted);font-style:italic;}
-.flip-card .example mark{background:var(--amber-bg);color:var(--amber);font-style:normal;font-weight:600;border-radius:2px;}
-.practice-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
-.practice-progress{margin-top:14px;font-size:12px;color:var(--ink-muted);}
+.fc-streak{color:var(--amber);font-weight:600;}
+
+/* 3D scene container */
+.fc-scene{
+  height:300px;perspective:1200px;
+  cursor:pointer;margin-bottom:20px;
+  user-select:none;-webkit-user-select:none;
+  border-radius:var(--radius);
+}
+@media(max-width:480px){.fc-scene{height:280px;}}
+
+/* The flipping card — contains both faces */
+.fc-card{
+  position:relative;width:100%;height:100%;
+  transform-style:preserve-3d;
+  transition:transform .55s cubic-bezier(.45,0,.55,1);
+}
+.fc-card.flipped{transform:rotateY(180deg);}
+
+/* Both faces share the same slot */
+.fc-front,.fc-back{
+  position:absolute;inset:0;
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:10px;padding:28px 32px;
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden;
+}
+.fc-front{border-top:2px solid var(--amber);}
+.fc-back{border-top:2px solid var(--green);transform:rotateY(180deg);}
+
+/* Front — Russian side */
+.fc-side-label{
+  font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-muted);margin-bottom:4px;font-weight:600;
+}
+.fc-word-ru{
+  font-family:'Lora',serif;
+  font-size:calc(24px * var(--font-scale));
+  font-weight:600;color:var(--ink);line-height:1.25;
+  max-width:100%;word-break:break-word;
+}
+.fc-hint{font-size:11px;color:var(--ink-muted);margin-top:4px;}
+.fc-context-ru{
+  font-family:'Lora',serif;font-style:italic;
+  font-size:calc(12px * var(--font-scale));
+  color:var(--ink-soft);line-height:1.5;max-width:380px;
+}
+.fc-context-ru mark{
+  background:var(--amber-bg);color:var(--amber);
+  font-style:normal;font-weight:600;border-radius:2px;
+}
+.fc-context-ru.loading,.fc-context-back.loading{color:var(--ink-muted);font-style:italic;}
+
+/* Back — English side */
+.fc-word-row-en{
+  display:flex;align-items:center;gap:8px;justify-content:center;
+}
+.fc-word-en{
+  font-family:'Lora',serif;
+  font-size:calc(26px * var(--font-scale));
+  font-weight:600;color:var(--ink);line-height:1.2;
+  word-break:break-word;
+}
+.fc-ipa{
+  font-family:'Lora',serif;font-style:italic;
+  font-size:calc(13px * var(--font-scale));
+  color:var(--amber);
+}
+.fc-example-row{display:flex;align-items:flex-start;gap:6px;max-width:380px;}
+.fc-example{
+  font-family:'Lora',serif;font-style:italic;
+  font-size:calc(12px * var(--font-scale));
+  color:var(--ink-soft);line-height:1.5;flex:1;
+}
+.fc-example mark{background:var(--amber-bg);color:var(--amber);font-style:normal;font-weight:600;border-radius:2px;}
+.fc-context-back{
+  font-family:'Lora',serif;
+  font-size:calc(12px * var(--font-scale));
+  color:var(--green-dim);line-height:1.5;max-width:380px;
+}
+.fc-context-back mark{background:var(--green-bg);color:var(--green);font-style:normal;font-weight:600;border-radius:2px;}
+
+/* Actions that appear after flip */
+.practice-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:14px;}
+.practice-actions.hidden{visibility:hidden;pointer-events:none;}
+.btn-forgot{background:var(--rust-bg);color:var(--rust);border:1px solid var(--rust);border-radius:var(--radius-sm);padding:10px 24px;font-size:13px;font-weight:600;font-family:inherit;}
+.btn-forgot:hover{background:var(--rust);color:#fff;}
+.btn-know{background:var(--green-dim);color:#fff;border:none;border-radius:var(--radius-sm);padding:10px 24px;font-size:13px;font-weight:600;font-family:inherit;}
+.btn-know:hover{background:var(--green);}
+.practice-progress{font-size:12px;color:var(--ink-muted);}
+.fc-keyboard-hint{font-size:11px;color:var(--ink-muted);margin-top:6px;}
+
+/* Key shortcut badges */
+.kbd{
+  display:inline-block;border:1px solid var(--line);border-radius:3px;
+  padding:1px 5px;font-size:10px;color:var(--ink-muted);
+  background:var(--surface-2);margin:0 2px;
+}
 
 /* ── FOOTER ──────────────────────────────────────── */
 footer{text-align:center;padding:20px;color:var(--ink-muted);font-size:11px;border-top:1px solid var(--line);}
@@ -2204,9 +2296,15 @@ function buildPracticeQueue(){
   practiceRevealed = false;
 }
 let practiceRequestId = 0;
+let practiceKeyHandler = null; // глобальный обработчик клавиш — нужно чистить при смене карточки
+
 function renderPractice(){
   const reqId = ++practiceRequestId;
   const content = document.getElementById("practiceContent");
+
+  // Убираем предыдущий обработчик клавиш
+  if(practiceKeyHandler){ document.removeEventListener("keydown", practiceKeyHandler); practiceKeyHandler = null; }
+
   if(practiceQueue.length === 0){
     content.innerHTML = `<div class="empty-state">
       Нет слов для тренировки. Сначала откройте текст и добавьте слова в раздел «В изучении».
@@ -2216,76 +2314,138 @@ function renderPractice(){
     if(goRead) goRead.addEventListener("click", ()=>showView("home"));
     return;
   }
+
   const item = practiceQueue[practiceIndex];
+  practiceRevealed = false;
+
+  // Вычисляем перевод слова (первое значение без уточнений) для подсветки
+  const wordRu = item.translation ? item.translation.split(/[,，;(]/)[0].trim() : null;
+
   content.innerHTML = `
     <div class="practice-wrap">
-      <div class="flip-card" id="flipCard">
-        <div class="tt-word-row" style="justify-content:center;">
-          <span>${escapeHtml(item.key)}</span>
-          <button class="tt-speak" id="pSpeak" aria-label="Произнести" title="Произнести">🔊</button>
+      <div class="fc-progress">
+        <span>Карточка ${practiceIndex + 1}&thinsp;/&thinsp;${practiceQueue.length}</span>
+        ${item.streak > 0 ? `<span class="fc-streak">🔥 ×${item.streak}</span>` : "<span></span>"}
+      </div>
+
+      <div class="fc-scene" id="fcScene" tabindex="0" role="button" aria-label="Нажмите, чтобы перевернуть карточку">
+        <div class="fc-card" id="fcCard">
+
+          <!-- ЛИЦЕВАЯ СТОРОНА: русский -->
+          <div class="fc-front">
+            <div class="fc-side-label">🇷🇺 Русский</div>
+            <div class="fc-word-ru">${escapeHtml(item.translation)}</div>
+            ${item.example
+              ? `<div class="fc-context-ru loading" id="fcContextFront">переводим…</div>`
+              : `<div class="fc-hint">нажмите, чтобы увидеть английское слово</div>`}
+          </div>
+
+          <!-- ОБРАТНАЯ СТОРОНА: английский -->
+          <div class="fc-back">
+            <div class="fc-side-label">🇬🇧 English</div>
+            <div class="fc-word-row-en">
+              <span class="fc-word-en">${escapeHtml(item.key)}</span>
+              <button class="tt-speak" id="pSpeak" aria-label="Произнести" title="Произнести">🔊</button>
+            </div>
+            <div class="fc-ipa loading" id="fcIpa"></div>
+            ${item.example ? `
+              <div class="fc-example-row">
+                <div class="fc-example">${highlightInSentence(item.example, item.key)}</div>
+                <button class="tt-speak tt-speak-sm" id="pSpeakEx" aria-label="Прочитать" title="Прочитать">🔊</button>
+              </div>
+              <div class="fc-context-back loading" id="fcContextBack">переводим…</div>
+            ` : ""}
+          </div>
+
         </div>
-        ${item.example ? `<div class="card-context-row">
-          <div class="example">${highlightInSentence(item.example, item.key)}</div>
-          <button class="tt-speak tt-speak-sm" id="pSpeakContext" aria-label="Прочитать предложение" title="Прочитать предложение">🔊</button>
-        </div>` : ""}
-        ${practiceRevealed ? `<div class="translation">${escapeHtml(item.translation)}</div>` : ""}
-        ${practiceRevealed && item.example ? `<div class="context-translation loading" id="contextTranslation">переводим предложение…</div>` : ""}
       </div>
-      <div class="practice-actions">
-        ${practiceRevealed
-          ? `<button class="btn" id="pRemember">Помню</button><button class="btn secondary" id="pForgot">Забыл</button>`
-          : `<button class="btn" id="pReveal">Показать перевод</button>`}
+
+      <div class="practice-actions hidden" id="practiceActions">
+        <button class="btn-forgot" id="pForgot">✗ Забыл</button>
+        <button class="btn-know" id="pRemember">✓ Помню</button>
       </div>
-      <div class="practice-progress">Осталось карточек: ${practiceQueue.length}</div>
+      <div class="practice-progress">Слов в изучении: ${practiceQueue.length}</div>
+      <div class="fc-keyboard-hint"><kbd class="kbd">Пробел</kbd> перевернуть &nbsp; <kbd class="kbd">→</kbd> помню &nbsp; <kbd class="kbd">←</kbd> забыл</div>
     </div>`;
 
-  document.getElementById("pSpeak").addEventListener("click", ()=>speak(item.key));
-  const speakContext = document.getElementById("pSpeakContext");
-  if(speakContext) speakContext.addEventListener("click", ()=>speak(item.example));
-  if(practiceRevealed && item.example){
-    fetchApiTranslation(item.example).then(translated=>{
-      if(reqId !== practiceRequestId) return;
-      const el = document.getElementById("contextTranslation");
-      if(!el) return;
-      if(translated){
-        // Подсвечиваем перевод слова внутри перевода предложения, если он там есть
-        const wordRu = item.translation ? item.translation.split(/[,，;(]/)[0].trim() : null;
-        if(wordRu){
-          el.innerHTML = highlightInSentence(translated, wordRu);
-        } else {
-          el.textContent = translated;
-        }
-        el.classList.remove("loading");
-      } else {
-        el.remove();
-      }
-    });
+  /* ── Переворачивание ─────────────────────────── */
+  const scene  = document.getElementById("fcScene");
+  const card   = document.getElementById("fcCard");
+  const actions = document.getElementById("practiceActions");
+
+  function flip(){
+    if(practiceRevealed) return;
+    practiceRevealed = true;
+    card.classList.add("flipped");
+    actions.classList.remove("hidden");
+    speak(item.key); // автоозвучка при перевороте
   }
-  const reveal = document.getElementById("pReveal");
-  if(reveal) reveal.addEventListener("click", ()=>{ practiceRevealed = true; renderPractice(); });
-  const remember = document.getElementById("pRemember");
-  if(remember) remember.addEventListener("click", ()=>{
+  scene.addEventListener("click", flip);
+  scene.addEventListener("keydown", e=>{ if(e.key === " " || e.key === "Enter"){ e.preventDefault(); flip(); } });
+
+  /* ── Обработчик клавиш для кнопок после переворота ── */
+  practiceKeyHandler = (e)=>{
+    const inPractice = !!document.getElementById("practiceContent");
+    if(!inPractice){ document.removeEventListener("keydown", practiceKeyHandler); return; }
+    if(e.key === " " || e.key === "Enter"){ if(!practiceRevealed){ e.preventDefault(); flip(); } }
+    else if(e.key === "ArrowRight" && practiceRevealed){ document.getElementById("pRemember")?.click(); }
+    else if(e.key === "ArrowLeft"  && practiceRevealed){ document.getElementById("pForgot")?.click(); }
+  };
+  document.addEventListener("keydown", practiceKeyHandler);
+
+  /* ── Кнопки оценки ──────────────────────────── */
+  document.getElementById("pRemember").addEventListener("click", ()=>{
     item.streak++;
     if(item.streak >= 3){
       setStatus(item.key, "known");
-      practiceQueue.splice(practiceIndex,1);
+      practiceQueue.splice(practiceIndex, 1);
     } else {
-      practiceQueue.push(practiceQueue.splice(practiceIndex,1)[0]);
+      practiceQueue.push(practiceQueue.splice(practiceIndex, 1)[0]);
     }
     afterPracticeStep();
   });
-  const forgot = document.getElementById("pForgot");
-  if(forgot) forgot.addEventListener("click", ()=>{
+  document.getElementById("pForgot").addEventListener("click", ()=>{
     item.streak = 0;
-    practiceQueue.push(practiceQueue.splice(practiceIndex,1)[0]);
+    practiceQueue.push(practiceQueue.splice(practiceIndex, 1)[0]);
     afterPracticeStep();
   });
+
+  /* ── Кнопки озвучки ─────────────────────────── */
+  document.getElementById("pSpeak").addEventListener("click", e=>{ e.stopPropagation(); speak(item.key); });
+  const speakEx = document.getElementById("pSpeakEx");
+  if(speakEx) speakEx.addEventListener("click", e=>{ e.stopPropagation(); speak(item.example); });
+
+  /* ── Транскрипция ───────────────────────────── */
+  fetchTranscription(item.key).then(result=>{
+    if(reqId !== practiceRequestId) return;
+    const ipaEl = document.getElementById("fcIpa");
+    if(!ipaEl) return;
+    if(result && result.ipa){ ipaEl.textContent = result.ipa; ipaEl.classList.remove("loading"); }
+    else { ipaEl.remove(); }
+  });
+
+  /* ── Перевод предложения ────────────────────── */
+  if(item.example){
+    fetchApiTranslation(item.example).then(translated=>{
+      if(reqId !== practiceRequestId) return;
+      const frontEl = document.getElementById("fcContextFront");
+      const backEl  = document.getElementById("fcContextBack");
+      const html = translated
+        ? (wordRu ? highlightInSentence(translated, wordRu) : escapeHtml(translated))
+        : null;
+      if(frontEl){ if(html){ frontEl.innerHTML = html; frontEl.classList.remove("loading"); } else frontEl.remove(); }
+      if(backEl){  if(html){ backEl.innerHTML  = html; backEl.classList.remove("loading");  } else backEl.remove(); }
+    });
+  }
 }
+
 function afterPracticeStep(){
   practiceRevealed = false;
+  if(practiceKeyHandler){ document.removeEventListener("keydown", practiceKeyHandler); practiceKeyHandler = null; }
   if(practiceIndex >= practiceQueue.length) practiceIndex = 0;
   renderPractice();
 }
+
 
 /* ============================================================
    ИНИЦИАЛИЗАЦИЯ
