@@ -1,6 +1,8 @@
 (function(){
 "use strict";
 
+const SOUND_ICON = '<svg class="sound-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M16 9.5a4 4 0 0 1 0 5M18.5 7a7.5 7.5 0 0 1 0 10"/></svg>';
+
 /* ============================================================
    ДАННЫЕ: тексты для чтения
    ============================================================ */
@@ -1025,7 +1027,7 @@ function clearSpeakingHighlight(){
 }
 function resetReadAloudButton(){
   const btn = document.getElementById("readAloudBtn");
-  if(btn){ btn.textContent = "🔊 Слушать текст"; btn.dataset.playing = "0"; }
+  if(btn){ btn.innerHTML = SOUND_ICON + " Слушать текст"; btn.dataset.playing = "0"; }
   const floatBtn = document.getElementById("floatingStopBtn");
   if(floatBtn) floatBtn.classList.add("hidden");
   clearSpeakingHighlight();
@@ -1227,6 +1229,9 @@ function highlightInSentence(sentence, token){
    ============================================================ */
 const apiTranslationCache = {};
 const transcriptionCache = {};
+const TRANSCRIPTION_FALLBACKS = {
+  constantine: "/ˈkɒnstəntaɪn/"
+};
 
 async function fetchWithTimeout(url, ms){
   const controller = new AbortController();
@@ -1263,7 +1268,8 @@ async function fetchApiTranslation(text){
 async function fetchTranscription(word){
   const k = word.toLowerCase();
   if(transcriptionCache.hasOwnProperty(k)) return transcriptionCache[k];
-  let result = null;
+  let result = TRANSCRIPTION_FALLBACKS[k] ? {ipa: TRANSCRIPTION_FALLBACKS[k], audio:null} : null;
+  if(result){ transcriptionCache[k] = result; return result; }
   try{
     const resp = await fetchWithTimeout(
       "https://api.dictionaryapi.dev/api/v2/entries/en/" + encodeURIComponent(k), 6000);
@@ -1286,6 +1292,15 @@ async function fetchTranscription(word){
   }catch(e){ /* словарь недоступен — транскрипцию просто не показываем */ }
   transcriptionCache[k] = result;
   return result;
+}
+
+async function fetchPhraseTranscription(text){
+  const tokens = text.match(/[A-Za-z']+/g) || [];
+  if(!tokens.length) return null;
+  if(tokens.length > 20) return null;
+  const parts = await Promise.all(tokens.map(token=>fetchTranscription(token)));
+  const ipa = parts.map((part, index)=>part && part.ipa ? part.ipa : tokens[index]).join(" ");
+  return parts.some(Boolean) ? ipa : null;
 }
 
 let tooltipRequestId = 0;
@@ -1318,7 +1333,7 @@ function showTooltip(el, token, forcedSentence){
 
     let inner = `<button class="tt-close" id="ttClose" aria-label="Закрыть">✕</button>`;
     inner += `<div class="tt-word-row"><span class="tt-word">${escapeHtml(token)}</span>
-      <button class="tt-speak" id="ttSpeak" aria-label="Произнести слово" title="Произнести слово">🔊</button></div>`;
+      <button class="tt-speak" id="ttSpeak" aria-label="Произнести слово" title="Произнести слово">${SOUND_ICON}</button></div>`;
     if(view.info && view.info.key !== token.toLowerCase()){
       inner += `<div class="tt-lemma">словарная форма: ${escapeHtml(view.info.key)}</div>`;
     }
@@ -1349,7 +1364,7 @@ function showTooltip(el, token, forcedSentence){
     if(sentence){
       inner += `<div class="tt-context-row">
         <div class="tt-context">${highlightInSentence(sentence, token)}</div>
-        <button class="tt-speak tt-speak-sm" id="ttSpeakContext" aria-label="Прочитать предложение" title="Прочитать предложение">🔊</button>
+        <button class="tt-speak tt-speak-sm" id="ttSpeakContext" aria-label="Прочитать предложение" title="Прочитать предложение">${SOUND_ICON}</button>
       </div>`;
       if(view.sentenceTranslationStatus === "loading"){
         inner += `<div class="tt-sentence-ru loading">переводим предложение…</div>`;
@@ -1496,13 +1511,13 @@ function showPhraseTooltip(range, text, sentence){
 
   let inner = `<button class="tt-close" id="ttClose" aria-label="Закрыть">✕</button>`;
   inner += `<div class="tt-word-row"><span class="tt-word" style="font-size:16px;">«${escapeHtml(text)}»</span>
-    <button class="tt-speak" id="ttSpeak" aria-label="Произнести фразу" title="Произнести фразу">🔊</button></div>`;
+    <button class="tt-speak" id="ttSpeak" aria-label="Произнести фразу" title="Произнести фразу">${SOUND_ICON}</button></div>`;
   inner += `<div class="tt-lemma">слова по отдельности (нажмите для перевода):</div>`;
   inner += `<div class="tt-phrase-words">${buildLineHtml(text)}</div>`;
   if(sentence && sentence.toLowerCase() !== text.toLowerCase()){
     inner += `<div class="tt-context-row">
       <div class="tt-context">${highlightInSentence(sentence, text)}</div>
-      <button class="tt-speak tt-speak-sm" id="ttSpeakContext" aria-label="Прочитать предложение" title="Прочитать предложение">🔊</button>
+      <button class="tt-speak tt-speak-sm" id="ttSpeakContext" aria-label="Прочитать предложение" title="Прочитать предложение">${SOUND_ICON}</button>
     </div>`;
   }
 
@@ -1610,13 +1625,14 @@ function renderDictionary(){
     <div class="dict-chip" data-key="${escapeHtml(key)}">
       <div class="w-row" style="display:flex;align-items:baseline;justify-content:space-between;gap:6px;">
         <span class="w">${escapeHtml(key)}</span>
-        <button class="tt-speak" data-speak="${escapeHtml(key)}" aria-label="Произнести" title="Произнести" style="width:22px;height:22px;font-size:11px;">🔊</button>
+        <button class="tt-speak" data-speak="${escapeHtml(key)}" aria-label="Произнести" title="Произнести" style="width:22px;height:22px;font-size:11px;">${SOUND_ICON}</button>
       </div>
+      <div class="dict-ipa loading" data-ipa-key="${escapeHtml(key)}">ищем транскрипцию…</div>
       <div class="t">${escapeHtml(v.translation)}</div>
       ${v.example ? `<div class="ex-row">
         <div class="ex">${highlightInSentence(v.example, key)}</div>
-        <button class="tt-speak tt-speak-sm" data-speak-example="${escapeHtml(v.example)}" aria-label="Прочитать предложение" title="Прочитать предложение">🔊</button>
-      </div>` : ""}
+        <button class="tt-speak tt-speak-sm" data-speak-example="${escapeHtml(v.example)}" aria-label="Прочитать предложение" title="Прочитать предложение">${SOUND_ICON}</button>
+      </div><div class="dict-ex-ipa loading" data-ex-ipa="${escapeHtml(v.example)}">ищем транскрипцию примера…</div>` : ""}
       <span class="badge ${v.status}">${v.status==="known" ? "изучено" : "в изучении"}</span>
       ${v.type==="phrase" ? `<span class="badge" style="background:var(--amber-soft2);color:var(--ink-soft);">фраза</span>` : ""}
       <div class="chip-actions">
@@ -1640,6 +1656,26 @@ function renderDictionary(){
     if(speakBtn) speakBtn.addEventListener("click", ()=>speak(key));
     const speakExampleBtn = chip.querySelector("[data-speak-example]");
     if(speakExampleBtn) speakExampleBtn.addEventListener("click", ()=>speak(speakExampleBtn.dataset.speakExample));
+  });
+
+  content.querySelectorAll(".dict-ipa").forEach(ipaEl=>{
+    fetchTranscription(ipaEl.dataset.ipaKey).then(result=>{
+      if(!ipaEl.isConnected) return;
+      if(result && result.ipa){
+        ipaEl.textContent = result.ipa;
+        ipaEl.classList.remove("loading");
+      } else {
+        ipaEl.remove();
+      }
+    });
+  });
+
+  content.querySelectorAll(".dict-ex-ipa").forEach(ipaEl=>{
+    fetchPhraseTranscription(ipaEl.dataset.exIpa).then(ipa=>{
+      if(!ipaEl.isConnected) return;
+      if(ipa){ ipaEl.textContent = ipa; ipaEl.classList.remove("loading"); }
+      else ipaEl.remove();
+    });
   });
 }
 
@@ -1696,30 +1732,28 @@ function renderPractice(){
       <div class="fc-scene" id="fcScene" tabindex="0" role="button" aria-label="Нажмите, чтобы перевернуть карточку">
         <div class="fc-card" id="fcCard">
 
-          <!-- ЛИЦЕВАЯ СТОРОНА: русский -->
           <div class="fc-front">
-            <div class="fc-side-label">🇷🇺 Русский</div>
-            <div class="fc-word-ru">${escapeHtml(item.translation)}</div>
-            ${item.example
-              ? `<div class="fc-context-ru loading" id="fcContextFront">переводим…</div>`
-              : `<div class="fc-hint">нажмите, чтобы увидеть английское слово</div>`}
-          </div>
-
-          <!-- ОБРАТНАЯ СТОРОНА: английский -->
-          <div class="fc-back">
             <div class="fc-side-label">🇬🇧 English</div>
             <div class="fc-word-row-en">
               <span class="fc-word-en">${escapeHtml(item.key)}</span>
-              <button class="tt-speak" id="pSpeak" aria-label="Произнести" title="Произнести">🔊</button>
+              <button class="tt-speak" id="pSpeak" aria-label="Произнести" title="Произнести">${SOUND_ICON}</button>
             </div>
             <div class="fc-ipa loading" id="fcIpa"></div>
             ${item.example ? `
               <div class="fc-example-row">
                 <div class="fc-example">${highlightInSentence(item.example, item.key)}</div>
-                <button class="tt-speak tt-speak-sm" id="pSpeakEx" aria-label="Прочитать" title="Прочитать">🔊</button>
+                <button class="tt-speak tt-speak-sm" id="pSpeakEx" aria-label="Прочитать" title="Прочитать">${SOUND_ICON}</button>
               </div>
-              <div class="fc-context-back loading" id="fcContextBack">переводим…</div>
             ` : ""}
+            <div class="fc-hint">нажмите, чтобы увидеть перевод</div>
+          </div>
+
+          <div class="fc-back">
+            <div class="fc-side-label">🇷🇺 Русский</div>
+            <div class="fc-word-ru">${escapeHtml(item.translation)}</div>
+            ${item.example
+              ? `<div class="fc-context-back loading" id="fcContextBack">переводим…</div>`
+              : `<div class="fc-hint">нажмите, чтобы увидеть английское слово</div>`}
           </div>
 
         </div>
@@ -1739,11 +1773,10 @@ function renderPractice(){
   const actions = document.getElementById("practiceActions");
 
   function flip(){
-    if(practiceRevealed) return;
-    practiceRevealed = true;
-    card.classList.add("flipped");
-    actions.classList.remove("hidden");
-    speak(item.key); // автоозвучка при перевороте
+    practiceRevealed = !practiceRevealed;
+    card.classList.toggle("flipped", practiceRevealed);
+    actions.classList.toggle("hidden", !practiceRevealed);
+    if(practiceRevealed) speak(item.key);
   }
   scene.addEventListener("click", flip);
   scene.addEventListener("keydown", e=>{ if(e.key === " " || e.key === "Enter"){ e.preventDefault(); flip(); } });
@@ -1752,7 +1785,7 @@ function renderPractice(){
   practiceKeyHandler = (e)=>{
     const inPractice = !!document.getElementById("practiceContent");
     if(!inPractice){ document.removeEventListener("keydown", practiceKeyHandler); return; }
-    if(e.key === " " || e.key === "Enter"){ if(!practiceRevealed){ e.preventDefault(); flip(); } }
+    if(e.key === " " || e.key === "Enter"){ e.preventDefault(); flip(); }
     else if(e.key === "ArrowRight" && practiceRevealed){ document.getElementById("pRemember")?.click(); }
     else if(e.key === "ArrowLeft"  && practiceRevealed){ document.getElementById("pForgot")?.click(); }
   };
@@ -1793,12 +1826,10 @@ function renderPractice(){
   if(item.example){
     fetchApiTranslation(item.example).then(translated=>{
       if(reqId !== practiceRequestId) return;
-      const frontEl = document.getElementById("fcContextFront");
       const backEl  = document.getElementById("fcContextBack");
       const html = translated
         ? (wordRu ? highlightInSentence(translated, wordRu) : escapeHtml(translated))
         : null;
-      if(frontEl){ if(html){ frontEl.innerHTML = html; frontEl.classList.remove("loading"); } else frontEl.remove(); }
       if(backEl){  if(html){ backEl.innerHTML  = html; backEl.classList.remove("loading");  } else backEl.remove(); }
     });
   }
