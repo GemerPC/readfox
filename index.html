@@ -101,7 +101,11 @@
   </section>
 
   <section data-view="practice" class="view hidden">
-    <div class="section-head"><h2>Тренировка слов</h2><p>Карточки из слов со статусом «в изучении».</p></div>
+    <div class="section-head"><h2>Тренировка слов</h2><p>Закрепляйте слова карточками или выбирайте их в контексте.</p></div>
+    <div class="practice-mode-tabs" role="tablist" aria-label="Режим тренировки">
+      <button type="button" class="active" data-practice-mode="flashcards" role="tab" aria-selected="true">Карточки</button>
+      <button type="button" data-practice-mode="quiz" role="tab" aria-selected="false">Квиз</button>
+    </div>
     <div id="practiceContent"></div>
   </section>
 

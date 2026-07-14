@@ -388,6 +388,18 @@ main{max-width:1000px;margin:0 auto;padding:36px 24px 100px;}
 
 /* ── PRACTICE ────────────────────────────────────── */
 /* ── PRACTICE — 3D FLIP CARD ─────────────────────── */
+.practice-mode-tabs{
+  width:max-content;max-width:100%;display:flex;margin:0 auto 22px;padding:3px;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:7px;
+}
+.practice-mode-tabs button{
+  min-width:112px;border:0;border-radius:5px;background:transparent;color:var(--ink-muted);
+  padding:8px 16px;font:600 12px/1.2 inherit;cursor:pointer;
+}
+.practice-mode-tabs button:hover{color:var(--ink);}
+.practice-mode-tabs button.active{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12);}
+.practice-mode-tabs button:focus-visible{outline:2px solid var(--amber);outline-offset:2px;}
+
 .practice-wrap{max-width:480px;margin:0 auto;text-align:center;}
 .fc-progress{
   display:flex;justify-content:space-between;align-items:center;
@@ -493,6 +505,61 @@ main{max-width:1000px;margin:0 auto;padding:36px 24px 100px;}
   display:inline-block;border:1px solid var(--line);border-radius:3px;
   padding:1px 5px;font-size:10px;color:var(--ink-muted);
   background:var(--surface-2);margin:0 2px;
+}
+
+/* Quiz */
+.quiz-wrap{max-width:620px;margin:0 auto;text-align:center;}
+.quiz-meta{display:flex;justify-content:space-between;gap:16px;margin-bottom:12px;font-size:12px;color:var(--ink-muted);}
+.quiz-question{
+  min-height:360px;display:flex;flex-direction:column;justify-content:center;
+  padding:34px;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);
+}
+.quiz-label{font-size:11px;font-weight:600;color:var(--ink-muted);margin-bottom:22px;}
+.quiz-sentence-row{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:28px;}
+.quiz-sentence{
+  margin:0;font-family:'Lora',Georgia,serif;font-size:calc(24px * var(--font-scale));
+  line-height:1.5;color:var(--ink);overflow-wrap:anywhere;
+}
+.quiz-blank{
+  display:inline-block;min-width:92px;height:.9em;margin:0 4px;
+  border-bottom:2px solid var(--amber);vertical-align:-.08em;
+}
+.quiz-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.quiz-options button{
+  min-width:0;min-height:52px;display:flex;align-items:center;gap:11px;text-align:left;
+  padding:10px 12px;border:1px solid var(--line);border-radius:7px;
+  background:var(--surface-2);color:var(--ink);font:600 14px/1.3 inherit;cursor:pointer;
+  transition:border-color .15s,background .15s,transform .15s;
+}
+.quiz-options button:hover:not(:disabled){border-color:var(--amber);background:var(--amber-bg);transform:translateY(-1px);}
+.quiz-options button:focus-visible{outline:2px solid var(--amber);outline-offset:2px;}
+.quiz-options button:disabled{cursor:default;opacity:1;}
+.quiz-options button.correct{border-color:var(--green);background:var(--green-bg);color:var(--green);}
+.quiz-options button.wrong{border-color:var(--rust);background:var(--rust-bg);color:var(--rust);}
+.quiz-option-index{
+  width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;flex:none;
+  border:1px solid currentColor;border-radius:5px;font-size:11px;font-weight:600;opacity:.65;
+}
+.quiz-feedback{min-height:24px;margin-top:18px;font-size:13px;color:var(--ink-muted);}
+.quiz-feedback.success{color:var(--green);}
+.quiz-feedback.error{color:var(--rust);}
+.quiz-next{margin:16px auto 0;}
+.quiz-wrap .fc-keyboard-hint{margin-top:10px;}
+.quiz-result{
+  max-width:500px;margin:0 auto;padding:46px 28px;text-align:center;
+  background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);
+}
+.quiz-result-label{font-size:12px;color:var(--ink-muted);margin-bottom:12px;}
+.quiz-result strong{display:block;font-family:'Lora',Georgia,serif;font-size:42px;line-height:1.1;color:var(--ink);}
+.quiz-result p{margin:12px 0 20px;color:var(--ink-soft);font-size:13px;}
+
+@media(max-width:560px){
+  .practice-mode-tabs{width:100%;}
+  .practice-mode-tabs button{min-width:0;flex:1;}
+  .quiz-question{min-height:0;padding:26px 18px;}
+  .quiz-sentence{font-size:calc(20px * var(--font-scale));}
+  .quiz-sentence-row{align-items:flex-start;margin-bottom:22px;}
+  .quiz-options{grid-template-columns:1fr;}
 }
 
 /* ── FOOTER ──────────────────────────────────────── */

@@ -48,6 +48,106 @@ Businesses have also changed completely. Small shops can sell their products to 
 However, these changes also bring new problems. People spend more time looking at screens and less time talking face to face. Some experts worry that young people are losing important social skills. Others believe that technology simply created new ways to connect, rather than replacing old ones. Whatever the truth is, one thing is certain: the internet will continue to shape our future in ways we cannot fully predict yet.`
   },
   {
+    id:'new-apartment', level:'intermediate', title:'Переезд в новую квартиру',
+    teaser:'Первые дни после переезда: коробки, новая мебель и знакомство с соседями.',
+    body:
+`Last month, I moved into a new apartment on the other side of the city. The building is not new, but the rooms are bright and the kitchen is much larger than the one in my old place. On the first evening, I was too tired to unpack, so I ordered a pizza and ate it while sitting on a box.
+
+The next morning, I started organizing everything. I put my clothes in the bedroom cupboard, arranged my books on a shelf, and found a place for the coffee machine. I still need to buy a small table for the kitchen and some curtains for the living room. Moving is expensive, so I am trying not to buy everything at once.
+
+My neighbors seem friendly. A woman from the apartment upstairs brought me a plant and told me where the nearest supermarket was. The area is quieter than my old neighborhood, although the bus stop is a little farther away. The apartment does not feel completely like home yet, but every day it becomes more comfortable.`
+  },
+  {
+    id:'weekly-shopping', level:'intermediate', title:'Покупки на неделю',
+    teaser:'Как составить список продуктов, уложиться в бюджет и ничего не забыть.',
+    body:
+`Every Saturday morning, I do the shopping for the whole week. I used to go to the supermarket without a plan, but I often bought things I did not need and forgot something important. Now I check the fridge first and write a list on my phone.
+
+This week, I needed vegetables, rice, chicken, bread, and a few things for breakfast. I also wanted to buy coffee, but my usual brand had become much more expensive. I compared several packages and chose a cheaper one that was on sale. At the fruit section, I noticed that local apples cost less than imported ones, so I bought a large bag.
+
+Before paying, I looked through my basket one more time. I had almost forgotten washing-up liquid, which was the main reason I had come to the shop. The final price was slightly higher than I expected, but I stayed close to my budget. Making a list may seem boring, but it saves both time and money.`
+  },
+  {
+    id:'missed-bus', level:'intermediate', title:'Утро без автобуса',
+    teaser:'Опоздание на остановку, неожиданный маршрут и попытка вовремя попасть на работу.',
+    body:
+`On Tuesday, I left home five minutes later than usual. I thought I could still catch my bus, but I saw it leaving the stop as I turned the corner. The next one was not due for twenty minutes, and I had an important meeting at nine.
+
+I checked a transport app and found another route. It involved taking a tram and then walking for ten minutes. The tram was crowded, but at least it moved faster than the traffic around us. When I got off, it started raining, and I realized that my umbrella was still at home.
+
+I arrived at the office wet and out of breath, only two minutes before the meeting began. My manager smiled and said that several other people were late because of the weather. Since then, I have started preparing my bag in the evening and leaving home a little earlier. It is a small change, but my mornings have become much less stressful.`
+  },
+  {
+    id:'washing-machine', level:'intermediate', title:'Сломанная стиральная машина',
+    teaser:'Обычная стирка превращается в бытовую проблему, которую приходится быстро решать.',
+    body:
+`I was doing laundry on Sunday when the washing machine suddenly made a strange noise and stopped. The door would not open, and there was still water inside. I turned the machine off, waited a few minutes, and tried again, but nothing changed.
+
+First, I looked for the instruction manual, but I could not find it. Then I searched for the model online and watched a short repair video. It explained how to empty the water through a small filter near the floor. I put several towels under the machine and opened the filter carefully. A coin was stuck inside it.
+
+After I removed the coin, the machine started working again. Unfortunately, the bathroom floor was already covered with water, so I spent another half hour cleaning it. I was relieved that I did not have to call a repair service. I also learned an important lesson: always check the pockets of your clothes before putting them in the washing machine.`
+  },
+  {
+    id:'dinner-guests', level:'intermediate', title:'Ужин для друзей',
+    teaser:'Подготовка домашнего ужина, небольшая ошибка на кухне и тёплый вечер.',
+    body:
+`Last Friday, I invited three friends to dinner at my place. I decided to cook pasta with vegetables because it was simple and everyone could eat it. I bought the ingredients on my way home and started cooking an hour before they arrived.
+
+At first, everything went well. I cut the vegetables, prepared a salad, and put some music on. Then I noticed that I had forgotten to buy cheese. I called my friend Anna, who was already on her way, and asked her to stop at a small shop near my building. She arrived with two different kinds because she did not know which one I wanted.
+
+The pasta was ready a little too early, so it became slightly cold while we were talking. Nobody complained. We added the cheese, opened a bottle of juice, and spent the evening sharing stories. The meal was not perfect, but the atmosphere was relaxed and cheerful. Next time, I will make a better shopping list, but I will invite the same people.`
+  },
+  {
+    id:'dentist-visit', level:'intermediate', title:'Визит к стоматологу',
+    teaser:'Запись на приём, волнение перед осмотром и полезные рекомендации врача.',
+    body:
+`For several days, one of my teeth had been sensitive whenever I drank something cold. I hoped the problem would disappear, but it slowly became worse. Finally, I called a dental clinic near my office and made an appointment for Thursday afternoon.
+
+I was nervous in the waiting room because I had not visited a dentist for almost two years. The dentist asked me a few questions and took an X-ray. Fortunately, there was no serious damage. An old filling had become loose and needed to be replaced.
+
+The treatment took about thirty minutes and was less uncomfortable than I expected. Before I left, the dentist showed me a better way to brush the back teeth and recommended using dental floss every evening. I also booked another check-up for six months later. Going to the dentist is never my favorite activity, but dealing with a small problem early is much easier than waiting until it becomes painful and expensive.`
+  },
+  {
+    id:'returning-package', level:'intermediate', title:'Возврат интернет-заказа',
+    teaser:'Неудачная покупка одежды онлайн и оформление возврата через пункт выдачи.',
+    body:
+`I recently ordered a jacket from an online shop. The photos looked good, and the reviews were mostly positive. When the package arrived, however, the jacket was much darker than it appeared on the website, and the sleeves were too short.
+
+I checked the return policy and learned that I had fourteen days to send it back. First, I filled in an online form and selected the reason for the return. Then I printed a label, packed the jacket in the original bag, and took it to a collection point near the train station.
+
+The employee scanned the label and gave me a receipt with a tracking number. Three days later, I received an email saying that the shop had accepted the return. The money appeared in my bank account at the end of the week. The process was easier than I expected, but I will be more careful with size charts in the future. Online shopping is convenient, although you cannot always trust colors and sizes on a screen.`
+  },
+  {
+    id:'noisy-neighbors', level:'intermediate', title:'Шумные соседи',
+    teaser:'Как спокойно обсудить громкую музыку и договориться без конфликта.',
+    body:
+`A young couple moved into the apartment next to mine a few weeks ago. They seemed polite when we met in the hall, but they often played loud music late in the evening. At first, I ignored it because I did not want to create a problem with new neighbors.
+
+Last Wednesday, the music continued after midnight, and I could not sleep. I considered calling the building manager, but I decided to speak to them first. I knocked on their door and politely explained that my bedroom was next to their living room and that I had to get up early for work.
+
+They were surprised and apologized immediately. They had not realized how clearly the sound traveled through the wall. They turned the music down and gave me their phone number, asking me to send a message if it happened again. Since that conversation, the building has been quiet at night. I am glad I spoke to them directly instead of becoming angry or making an official complaint.`
+  },
+  {
+    id:'cleaning-saturday', level:'intermediate', title:'Большая субботняя уборка',
+    teaser:'Домашние дела, ненужные вещи и порядок, который помогает начать неделю спокойнее.',
+    body:
+`By the end of a busy week, my apartment usually becomes untidy. Clothes collect on a chair, cups stay on the desk, and papers cover the kitchen table. On Saturday, I decided to spend the morning cleaning everything properly.
+
+I opened the windows, put on a podcast, and started with the bedroom. I changed the bed sheets, put away my clothes, and found two sweaters that I no longer wore. Instead of throwing them away, I placed them in a bag to donate. Then I cleaned the bathroom and vacuumed the floors.
+
+The kitchen took the longest because I also checked the cupboards. Some food had passed its expiration date, and several containers were almost empty. I wrote down what I needed to replace before my next shopping trip. The whole job took nearly three hours, but the apartment felt completely different afterward. I made tea, sat down with a book, and enjoyed the quiet. A clean home does not solve every problem, but it helps me feel more organized.`
+  },
+  {
+    id:'working-from-home', level:'intermediate', title:'Рабочий день из дома',
+    teaser:'Как организовать удалённую работу, не отвлекаться и вовремя закончить день.',
+    body:
+`I work from home twice a week. At first, I enjoyed staying in comfortable clothes and avoiding the morning commute. After a while, however, I noticed that I was easily distracted by housework, messages, and the kitchen.
+
+Now I follow a simple routine. I get dressed before eight, make coffee, and sit at a small desk in the living room. I keep my phone in another room during important tasks and take a short break every hour. At lunchtime, I leave the apartment for a walk instead of eating in front of the computer.
+
+The most difficult part is finishing work on time. When the office is at home, it is easy to answer one more email or continue working after dinner. I now shut down my laptop at six and put it in a drawer. This small action helps me understand that the working day is over. Remote work gives me more freedom, but it also requires clear habits and a little self-discipline.`
+  },
+  {
     id:'fox', level:'advanced', title:'Лиса и путник',
     teaser:'Оригинальная басня о хитрой лисе и заблудшем путнике.',
     body:
@@ -61,8 +161,8 @@ The traveler thanked her with tears of relief, offering whatever he could give i
   }
 ];
 
-const LEVEL_LABEL = {beginner:'Начальный', intermediate:'Средний', advanced:'Продвинутый', custom:'Свой текст'};
-const LEVEL_SHORT = {beginner:'нач', intermediate:'сред', advanced:'прод', custom:'свой'};
+const LEVEL_LABEL = {beginner:'Начальный', intermediate:'B1 · Средний', advanced:'Продвинутый', custom:'Свой текст'};
+const LEVEL_SHORT = {beginner:'нач', intermediate:'B1', advanced:'прод', custom:'свой'};
 const LEVEL_DOTS = {beginner:1, intermediate:2, advanced:3, custom:0};
 
 /* ============================================================
@@ -423,6 +523,11 @@ let currentFilter = "all";
 let practiceQueue = [];
 let practiceIndex = 0;
 let practiceRevealed = false;
+let practiceMode = "flashcards";
+let quizQueue = [];
+let quizIndex = 0;
+let quizScore = 0;
+let quizAnswered = false;
 let saveTimer = null;
 let storageWorks = null;   // null = ещё не проверяли, true/false — результат самопроверки
 let storageBackend = null; // "claude" | "local" — какой механизм реально используется
@@ -1696,10 +1801,60 @@ function buildPracticeQueue(){
   practiceIndex = 0;
   practiceRevealed = false;
 }
+
+function isQuizWord(key){
+  return /^[A-Za-z]+(?:['-][A-Za-z]+)*$/.test(key);
+}
+
+function quizWordPattern(key){
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp("\\b" + escaped + "\\b", "i");
+}
+
+function buildQuizSentence(sentence, key){
+  const match = quizWordPattern(key).exec(sentence);
+  if(!match) return null;
+  return escapeHtml(sentence.slice(0, match.index)) +
+    `<span class="quiz-blank" aria-label="пропущенное слово">&nbsp;</span>` +
+    escapeHtml(sentence.slice(match.index + match[0].length));
+}
+
+function buildQuizOptions(correct){
+  const pool = [...new Set([...Object.keys(state.userWords), ...Object.keys(BASE_DICT)])]
+    .filter(key=>key !== correct && isQuizWord(key));
+  shuffle(pool);
+  pool.sort((a,b)=>Math.abs(a.length - correct.length) - Math.abs(b.length - correct.length));
+  return shuffle([correct, ...pool.slice(0, 3)]);
+}
+
+function buildQuizQueue(){
+  quizQueue = shuffle(Object.entries(state.userWords)
+    .filter(([key, value])=>value.status === "learning" && value.example && isQuizWord(key) && quizWordPattern(key).test(value.example))
+    .map(([key, value])=>({
+      key,
+      translation:value.translation,
+      example:value.example,
+      options:buildQuizOptions(key)
+    })));
+  quizIndex = 0;
+  quizScore = 0;
+  quizAnswered = false;
+}
+
+function resetPracticeSession(){
+  if(practiceMode === "quiz") buildQuizQueue();
+  else buildPracticeQueue();
+  renderPractice();
+}
 let practiceRequestId = 0;
 let practiceKeyHandler = null; // глобальный обработчик клавиш — нужно чистить при смене карточки
 
 function renderPractice(){
+  if(practiceMode === "quiz") renderQuiz();
+  else renderFlashcards();
+}
+
+function renderFlashcards(){
   const reqId = ++practiceRequestId;
   const content = document.getElementById("practiceContent");
 
@@ -1842,6 +1997,108 @@ function afterPracticeStep(){
   renderPractice();
 }
 
+function renderQuiz(){
+  const content = document.getElementById("practiceContent");
+  if(practiceKeyHandler){ document.removeEventListener("keydown", practiceKeyHandler); practiceKeyHandler = null; }
+
+  if(quizQueue.length === 0){
+    content.innerHTML = `<div class="empty-state">
+      Для квиза нужны слова со статусом «в изучении» и предложением-примером.
+      <br><button class="btn" id="quizGoRead">Перейти к текстам</button>
+    </div>`;
+    document.getElementById("quizGoRead")?.addEventListener("click", ()=>showView("home"));
+    return;
+  }
+
+  if(quizIndex >= quizQueue.length){
+    const percent = Math.round((quizScore / quizQueue.length) * 100);
+    content.innerHTML = `<div class="quiz-result">
+      <div class="quiz-result-label">Квиз завершён</div>
+      <strong>${quizScore}&thinsp;/&thinsp;${quizQueue.length}</strong>
+      <p>${percent >= 80 ? "Отличный результат." : percent >= 50 ? "Хороший результат — попробуйте ещё раз." : "Повторите слова и пройдите квиз снова."}</p>
+      <button class="btn" id="quizRestart">Пройти ещё раз</button>
+    </div>`;
+    document.getElementById("quizRestart").addEventListener("click", ()=>{
+      buildQuizQueue();
+      renderQuiz();
+    });
+    return;
+  }
+
+  const item = quizQueue[quizIndex];
+  const sentence = buildQuizSentence(item.example, item.key);
+  quizAnswered = false;
+
+  content.innerHTML = `<div class="quiz-wrap">
+    <div class="quiz-meta">
+      <span>Вопрос ${quizIndex + 1}&thinsp;/&thinsp;${quizQueue.length}</span>
+      <span>Верно: ${quizScore}</span>
+    </div>
+    <div class="quiz-question">
+      <div class="quiz-label">Выберите пропущенное слово</div>
+      <div class="quiz-sentence-row">
+        <p class="quiz-sentence">${sentence}</p>
+        <button class="tt-speak" id="quizSpeak" aria-label="Прослушать предложение" title="Прослушать предложение">${SOUND_ICON}</button>
+      </div>
+      <div class="quiz-options">
+        ${item.options.map((option, index)=>`<button type="button" data-quiz-option="${escapeHtml(option)}">
+          <span class="quiz-option-index">${index + 1}</span>
+          <span>${escapeHtml(option)}</span>
+        </button>`).join("")}
+      </div>
+      <div class="quiz-feedback" id="quizFeedback" aria-live="polite"></div>
+    </div>
+    <button class="btn quiz-next hidden" id="quizNext">Следующий вопрос</button>
+    <div class="fc-keyboard-hint"><kbd class="kbd">1–4</kbd> выбрать ответ &nbsp; <kbd class="kbd">Enter</kbd> дальше</div>
+  </div>`;
+
+  const optionButtons = [...content.querySelectorAll("[data-quiz-option]")];
+  const feedback = document.getElementById("quizFeedback");
+  const nextBtn = document.getElementById("quizNext");
+
+  function answer(selected, selectedButton){
+    if(quizAnswered) return;
+    quizAnswered = true;
+    const isCorrect = selected === item.key;
+    if(isCorrect) quizScore++;
+
+    optionButtons.forEach(button=>{
+      button.disabled = true;
+      if(button.dataset.quizOption === item.key) button.classList.add("correct");
+    });
+    if(!isCorrect) selectedButton.classList.add("wrong");
+
+    feedback.className = "quiz-feedback " + (isCorrect ? "success" : "error");
+    feedback.innerHTML = isCorrect
+      ? `<strong>Верно.</strong> ${escapeHtml(item.translation)}`
+      : `<strong>Правильный ответ: ${escapeHtml(item.key)}.</strong> ${escapeHtml(item.translation)}`;
+    nextBtn.classList.remove("hidden");
+    nextBtn.focus();
+  }
+
+  optionButtons.forEach(button=>{
+    button.addEventListener("click", ()=>answer(button.dataset.quizOption, button));
+  });
+  document.getElementById("quizSpeak").addEventListener("click", ()=>speak(item.example));
+  nextBtn.addEventListener("click", ()=>{
+    quizIndex++;
+    renderQuiz();
+  });
+
+  practiceKeyHandler = (event)=>{
+    const target = event.target;
+    if(target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+    if(!quizAnswered && /^[1-4]$/.test(event.key)){
+      event.preventDefault();
+      optionButtons[Number(event.key) - 1]?.click();
+    } else if(quizAnswered && event.key === "Enter"){
+      event.preventDefault();
+      nextBtn.click();
+    }
+  };
+  document.addEventListener("keydown", practiceKeyHandler);
+}
+
 
 /* ============================================================
    ИНИЦИАЛИЗАЦИЯ
@@ -1851,9 +2108,25 @@ function wireGlobalEvents(){
     btn.addEventListener("click", ()=>{
       const view = btn.dataset.view;
       if(view === "reader" && !currentText) return;
+      if(view !== "practice" && practiceKeyHandler){
+        document.removeEventListener("keydown", practiceKeyHandler);
+        practiceKeyHandler = null;
+      }
       showView(view);
       if(view === "dictionary") renderDictionary();
-      if(view === "practice"){ buildPracticeQueue(); renderPractice(); }
+      if(view === "practice") resetPracticeSession();
+    });
+  });
+
+  document.querySelectorAll("[data-practice-mode]").forEach(button=>{
+    button.addEventListener("click", ()=>{
+      practiceMode = button.dataset.practiceMode;
+      document.querySelectorAll("[data-practice-mode]").forEach(tab=>{
+        const active = tab === button;
+        tab.classList.toggle("active", active);
+        tab.setAttribute("aria-selected", String(active));
+      });
+      resetPracticeSession();
     });
   });
 
