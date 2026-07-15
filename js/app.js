@@ -517,9 +517,13 @@ function frequencyInfo(key){
    СОСТОЯНИЕ И ХРАНИЛИЩЕ
    ============================================================ */
 const STORAGE_KEY = "readfox-state";
-let state = { userWords:{}, customTexts:[], readTextIds:[], settings:{voiceName:null, fontSize:19, theme:"dark"} };
+const MINUTE_MS = 60 * 1000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
+const REVIEW_INTERVALS = [0, 20 * MINUTE_MS, DAY_MS, 3 * DAY_MS, 7 * DAY_MS, 14 * DAY_MS, 30 * DAY_MS];
+let state = { userWords:{}, customTexts:[], readTextIds:[], archivedTextIds:[], settings:{voiceName:null, fontSize:19, theme:"dark"} };
 let currentText = null;
 let currentFilter = "all";
+let libraryView = "active";
 let practiceQueue = [];
 let practiceIndex = 0;
 let practiceRevealed = false;
@@ -531,6 +535,74 @@ let quizAnswered = false;
 let saveTimer = null;
 let storageWorks = null;   // null = ещё не проверяли, true/false — результат самопроверки
 let storageBackend = null; // "claude" | "local" — какой механизм реально используется
+
+function initialReviewState(status){
+  const now = Date.now();
+  if(status === "known") return {reviewLevel:3, nextReviewAt:now + 3 * DAY_MS, lastReviewedAt:null, reviewLapses:0};
+  return {reviewLevel:0, nextReviewAt:now, lastReviewedAt:null, reviewLapses:0};
+}
+
+function normalizeReviewState(word){
+  if(!word || typeof word !== "object") return;
+  if(!Number.isFinite(word.reviewLevel)) word.reviewLevel = word.status === "known" ? 3 : 0;
+  word.reviewLevel = Math.max(0, Math.min(REVIEW_INTERVALS.length - 1, word.reviewLevel));
+  if(!Number.isFinite(word.nextReviewAt)) word.nextReviewAt = Number.isFinite(word.addedAt) ? word.addedAt : Date.now();
+  if(!Number.isFinite(word.reviewLapses)) word.reviewLapses = 0;
+  if(!Array.isArray(word.contexts)) word.contexts = word.example ? [word.example] : [];
+}
+
+function isReviewDue(word, now = Date.now()){
+  normalizeReviewState(word);
+  return word.nextReviewAt <= now;
+}
+
+function reviewDueLabel(word){
+  normalizeReviewState(word);
+  const remaining = word.nextReviewAt - Date.now();
+  if(remaining <= 0) return "повторить сейчас";
+  if(remaining < 60 * MINUTE_MS) return `повтор через ${Math.max(1, Math.ceil(remaining / MINUTE_MS))} мин`;
+  if(remaining < DAY_MS) return `повтор через ${Math.ceil(remaining / (60 * MINUTE_MS))} ч`;
+  return `повтор через ${Math.ceil(remaining / DAY_MS)} дн`;
+}
+
+function nextReviewSummary(){
+  const words = Object.values(state.userWords);
+  if(!words.length) return "Добавьте слова из текста, чтобы начать тренировку.";
+  words.forEach(normalizeReviewState);
+  const next = words.reduce((soonest, word)=>Math.min(soonest, word.nextReviewAt), Infinity);
+  return next <= Date.now() ? "Есть слова для повторения." : reviewDueLabel({nextReviewAt:next, reviewLevel:0, reviewLapses:0, contexts:[]});
+}
+
+function mergeContexts(word, context){
+  const values = [...(Array.isArray(word && word.contexts) ? word.contexts : []), word && word.example, context]
+    .filter(Boolean).map(value=>value.trim()).filter(Boolean);
+  return [...new Set(values)].slice(-12);
+}
+
+function recordReview(key, remembered, context){
+  const word = state.userWords[key];
+  if(!word) return;
+  normalizeReviewState(word);
+  const now = Date.now();
+  if(remembered){
+    word.reviewLevel = Math.min(word.reviewLevel + 1, REVIEW_INTERVALS.length - 1);
+    word.nextReviewAt = now + REVIEW_INTERVALS[word.reviewLevel];
+    if(word.reviewLevel >= 3) word.status = "known";
+  } else {
+    word.reviewLevel = 0;
+    word.nextReviewAt = now + 20 * MINUTE_MS;
+    word.reviewLapses++;
+    word.status = "learning";
+  }
+  word.lastReviewedAt = now;
+  if(context){
+    word.lastQuizContext = context;
+    word.contexts = mergeContexts(word, context);
+  }
+  saveState();
+  refreshWordVisuals();
+  updateStatsUI();
+}
 
 // window.storage существует только внутри артефактов Claude. Если его нет —
 // значит, страница открыта отдельно от чата (как обычный файл/сайт), и можно
@@ -556,7 +628,10 @@ async function loadState(){
       state.userWords = parsed.userWords || {};
       state.customTexts = parsed.customTexts || [];
       state.readTextIds = parsed.readTextIds || [];
+      state.archivedTextIds = Array.isArray(parsed.archivedTextIds) ? parsed.archivedTextIds : [];
       state.settings = parsed.settings || {voiceName:null, fontSize:19, theme:"dark"};
+      Object.values(state.userWords).forEach(normalizeReviewState);
+      cleanArchivedTextIds();
       if(typeof state.settings.fontSize !== "number") state.settings.fontSize = 19;
       if(!state.settings.theme) state.settings.theme = "dark";
     }
@@ -658,7 +733,8 @@ function exportData(){
     app: "ReadFox",
     userWords: state.userWords,
     customTexts: state.customTexts,
-    readTextIds: state.readTextIds
+    readTextIds: state.readTextIds,
+    archivedTextIds: state.archivedTextIds
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
   const url = URL.createObjectURL(blob);
@@ -678,11 +754,17 @@ async function importDataFromFile(file){
     const data = JSON.parse(text);
     const importedWords = data.userWords || {};
     const importedTexts = Array.isArray(data.customTexts) ? data.customTexts : [];
+    const importedReadIds = Array.isArray(data.readTextIds) ? data.readTextIds : [];
+    const importedArchive = Array.isArray(data.archivedTextIds) ? data.archivedTextIds : [];
     const wordCountBefore = Object.keys(state.userWords).length;
     Object.assign(state.userWords, importedWords);
+    Object.values(state.userWords).forEach(normalizeReviewState);
     const existingIds = new Set(state.customTexts.map(t=>t.id));
     importedTexts.forEach(t=>{ if(t && t.id && !existingIds.has(t.id)) state.customTexts.unshift(t); });
+    state.readTextIds = [...new Set([...state.readTextIds, ...importedReadIds])];
+    state.archivedTextIds = [...new Set([...state.archivedTextIds, ...importedArchive])];
     if(state.customTexts.length > 10) state.customTexts.length = 10;
+    cleanArchivedTextIds();
     const wordsAdded = Object.keys(state.userWords).length - wordCountBefore;
     refreshWordVisuals();
     updateStatsUI();
@@ -844,6 +926,10 @@ function updateStatsUI(){
 function allTexts(){
   return TEXTS.concat(state.customTexts);
 }
+function cleanArchivedTextIds(){
+  const validIds = new Set(allTexts().map(text=>text.id));
+  state.archivedTextIds = [...new Set(state.archivedTextIds)].filter(id=>validIds.has(id));
+}
 function levelDotsHtml(level){
   const n = LEVEL_DOTS[level] || 0;
   let dots = "";
@@ -852,8 +938,13 @@ function levelDotsHtml(level){
 }
 function renderLibrary(){
   const grid = document.getElementById("libraryGrid");
+  const archivedIds = new Set(state.archivedTextIds);
+  const showingArchive = libraryView === "archive";
+  let visibleCount = 0;
   let html = "";
   TEXTS.forEach(t=>{
+    if(archivedIds.has(t.id) !== showingArchive) return;
+    visibleCount++;
     html += `
     <div class="text-card" data-id="${t.id}" data-kind="built-in" tabindex="0" aria-label="Открыть текст ${escapeHtml(t.title)}">
       <div class="level">${levelDotsHtml(t.level)}<span>${LEVEL_LABEL[t.level]}</span></div>
@@ -861,11 +952,16 @@ function renderLibrary(){
       <p class="teaser">${escapeHtml(t.teaser)}</p>
       <div class="row">
         <span class="meta">${wordCount(t.body)} слов</span>
-        <button class="go" data-open="${t.id}">Читать →</button>
+        <span class="text-card-actions">
+          ${showingArchive ? `<button class="restore" data-restore="${t.id}">Вернуть</button>` : ""}
+          <button class="go" data-open="${t.id}">Читать →</button>
+        </span>
       </div>
     </div>`;
   });
   state.customTexts.forEach(t=>{
+    if(archivedIds.has(t.id) !== showingArchive) return;
+    visibleCount++;
     html += `
     <div class="text-card" data-id="${t.id}" data-kind="custom" tabindex="0" aria-label="Открыть текст ${escapeHtml(t.title)}">
       <div class="level">${levelDotsHtml("custom")}<span>${LEVEL_LABEL.custom}</span></div>
@@ -873,21 +969,32 @@ function renderLibrary(){
       <p class="teaser">${escapeHtml(t.teaser || "Текст, который вы добавили сами.")}</p>
       <div class="row">
         <span class="meta">${wordCount(t.body)} слов</span>
-        <span style="display:flex;gap:10px;">
-          <button class="del" data-del="${t.id}">Удалить</button>
+        <span class="text-card-actions">
+          ${showingArchive
+            ? `<button class="restore" data-restore="${t.id}">Вернуть</button>`
+            : `<button class="del" data-del="${t.id}">Удалить</button>`}
           <button class="go" data-open="${t.id}">Читать →</button>
         </span>
       </div>
     </div>`;
   });
-  html += `
+  if(!showingArchive) html += `
     <div class="text-card add-own" id="addOwnCard">
       <div>
         <div style="font-size:28px;margin-bottom:6px;">＋</div>
         <button id="addOwnBtn">Добавить свой текст</button>
       </div>
     </div>`;
+  if(showingArchive && visibleCount === 0){
+    html = `<div class="empty-state library-empty">Архив пока пуст.</div>`;
+  }
   grid.innerHTML = html;
+  document.getElementById("archiveCount").textContent = state.archivedTextIds.length;
+  document.querySelectorAll("[data-library-view]").forEach(tab=>{
+    const active = tab.dataset.libraryView === libraryView;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+  });
 
   function openCardText(card){
     const id = card.dataset.id;
@@ -926,7 +1033,16 @@ function renderLibrary(){
       if(!ok) showToast("Не удалось сохранить изменения. Проверьте соединение.", true);
     });
   });
-  document.getElementById("addOwnBtn").addEventListener("click", toggleCustomForm);
+  grid.querySelectorAll("[data-restore]").forEach(btn=>{
+    btn.addEventListener("click", async (e)=>{
+      e.stopPropagation();
+      state.archivedTextIds = state.archivedTextIds.filter(id=>id !== btn.dataset.restore);
+      renderLibrary();
+      await saveStateNow();
+      showToast("Текст возвращён из архива");
+    });
+  });
+  document.getElementById("addOwnBtn")?.addEventListener("click", toggleCustomForm);
 }
 
 function toggleCustomForm(){
@@ -988,8 +1104,36 @@ function openText(text){
   document.getElementById("navReader").textContent = "Чтение";
   document.getElementById("readerTitle").textContent = text.title;
   renderReaderContent();
+  updateArchiveButton();
   updateStatsUI();
   showView("reader");
+}
+
+function updateArchiveButton(){
+  const button = document.getElementById("archiveTextBtn");
+  if(!button || !currentText) return;
+  const archived = state.archivedTextIds.includes(currentText.id);
+  button.textContent = archived ? "Вернуть из архива" : "Добавить в архив";
+}
+
+async function toggleCurrentTextArchive(){
+  if(!currentText) return;
+  const archived = state.archivedTextIds.includes(currentText.id);
+  if(archived){
+    state.archivedTextIds = state.archivedTextIds.filter(id=>id !== currentText.id);
+    updateArchiveButton();
+    renderLibrary();
+    await saveStateNow();
+    showToast("Текст возвращён из архива");
+  } else {
+    state.archivedTextIds.push(currentText.id);
+    libraryView = "active";
+    renderLibrary();
+    await saveStateNow();
+    showToast("Текст добавлен в архив");
+    showView("home");
+    document.getElementById("libraryGrid").scrollIntoView({block:"start"});
+  }
 }
 function renderReaderContent(){
   if(!currentText) return;
@@ -1027,13 +1171,16 @@ function refreshWordVisuals(){
 function addWord(key, translation, status, example){
   const prev = state.userWords[key];
   state.userWords[key] = {
+    ...(prev || initialReviewState(status)),
     translation,
     status,
     addedAt: prev ? prev.addedAt : Date.now(),
     example: (prev && prev.example) ? prev.example : (example || ""),
+    contexts:mergeContexts(prev, example),
     type: "word",
     source: BASE_DICT.hasOwnProperty(key) ? "built-in" : "custom"
   };
+  normalizeReviewState(state.userWords[key]);
   saveState();
   refreshWordVisuals();
   updateStatsUI();
@@ -1042,20 +1189,32 @@ function addPhrase(text, translation, example){
   const key = text.trim().toLowerCase();
   const prev = state.userWords[key];
   state.userWords[key] = {
+    ...(prev || initialReviewState("learning")),
     translation,
     status: "learning",
     addedAt: prev ? prev.addedAt : Date.now(),
     example: example || (prev && prev.example) || "",
+    contexts:mergeContexts(prev, example),
     type: "phrase",
     source: "custom"
   };
+  normalizeReviewState(state.userWords[key]);
   saveStateNow(); // немедленно, иначе фраза может не сохраниться при быстрых действиях
   refreshWordVisuals();
   updateStatsUI();
 }
 function setStatus(key, status){
   if(state.userWords[key]){
-    state.userWords[key].status = status;
+    const word = state.userWords[key];
+    normalizeReviewState(word);
+    word.status = status;
+    if(status === "known"){
+      word.reviewLevel = Math.max(3, word.reviewLevel);
+      word.nextReviewAt = Date.now() + REVIEW_INTERVALS[word.reviewLevel];
+    } else {
+      word.reviewLevel = 0;
+      word.nextReviewAt = Date.now();
+    }
     saveState();
     refreshWordVisuals();
     updateStatsUI();
@@ -1513,8 +1672,9 @@ function showTooltip(el, token, forcedSentence){
     const rect = el.getBoundingClientRect();
     const top = window.scrollY + rect.bottom + 8;
     let left = window.scrollX + rect.left;
-    const maxLeft = window.scrollX + document.documentElement.clientWidth - 332;
-    if(left > maxLeft) left = Math.max(8, maxLeft);
+    const minLeft = window.scrollX + 8;
+    const maxLeft = window.scrollX + document.documentElement.clientWidth - box.offsetWidth - 8;
+    left = Math.max(minLeft, Math.min(left, maxLeft));
     box.style.top = top + "px";
     box.style.left = left + "px";
 
@@ -1647,8 +1807,9 @@ function showPhraseTooltip(range, text, sentence){
   const rect = range.getBoundingClientRect();
   const top = window.scrollY + rect.bottom + 8;
   let left = window.scrollX + rect.left;
-  const maxLeft = window.scrollX + document.documentElement.clientWidth - 372;
-  if(left > maxLeft) left = Math.max(8, maxLeft);
+  const minLeft = window.scrollX + 8;
+  const maxLeft = window.scrollX + document.documentElement.clientWidth - box.offsetWidth - 8;
+  left = Math.max(minLeft, Math.min(left, maxLeft));
   box.style.top = top + "px";
   box.style.left = left + "px";
 
@@ -1738,6 +1899,7 @@ function renderDictionary(){
         <div class="ex">${highlightInSentence(v.example, key)}</div>
         <button class="tt-speak tt-speak-sm" data-speak-example="${escapeHtml(v.example)}" aria-label="Прочитать предложение" title="Прочитать предложение">${SOUND_ICON}</button>
       </div><div class="dict-ex-ipa loading" data-ex-ipa="${escapeHtml(v.example)}">ищем транскрипцию примера…</div>` : ""}
+      <div class="dict-review ${isReviewDue(v) ? "due" : ""}">${reviewDueLabel(v)}</div>
       <span class="badge ${v.status}">${v.status==="known" ? "изучено" : "в изучении"}</span>
       ${v.type==="phrase" ? `<span class="badge" style="background:var(--amber-soft2);color:var(--ink-soft);">фраза</span>` : ""}
       <div class="chip-actions">
@@ -1796,8 +1958,8 @@ function shuffle(arr){
 }
 function buildPracticeQueue(){
   practiceQueue = shuffle(Object.entries(state.userWords)
-    .filter(([,v])=>v.status==="learning")
-    .map(([k,v])=>({key:k, translation:v.translation, example:v.example||"", streak:0})));
+    .filter(([,v])=>isReviewDue(v))
+    .map(([k,v])=>({key:k, translation:v.translation, example:v.example||"", reviewLevel:v.reviewLevel})));
   practiceIndex = 0;
   practiceRevealed = false;
 }
@@ -1827,15 +1989,42 @@ function buildQuizOptions(correct){
   return shuffle([correct, ...pool.slice(0, 3)]);
 }
 
+function quizContextsFor(key, word){
+  const candidates = mergeContexts(word, word.example);
+  allTexts().forEach(text=>{
+    splitSentences(text.body).forEach(sentence=>{
+      const clean = sentence.trim();
+      if(clean.length >= 20 && clean.length <= 220 && quizWordPattern(key).test(clean)) candidates.push(clean);
+    });
+  });
+  return [...new Set(candidates)].filter(sentence=>quizWordPattern(key).test(sentence));
+}
+
+function selectQuizContext(key, word){
+  const contexts = quizContextsFor(key, word);
+  if(!contexts.length) return null;
+  const current = word.lastQuizContext || word.example;
+  if(word.status === "known" && contexts.length > 1){
+    const index = contexts.indexOf(current);
+    return contexts[(index + 1 + contexts.length) % contexts.length];
+  }
+  return contexts.includes(word.example) ? word.example : contexts[0];
+}
+
 function buildQuizQueue(){
   quizQueue = shuffle(Object.entries(state.userWords)
-    .filter(([key, value])=>value.status === "learning" && value.example && isQuizWord(key) && quizWordPattern(key).test(value.example))
-    .map(([key, value])=>({
-      key,
-      translation:value.translation,
-      example:value.example,
-      options:buildQuizOptions(key)
-    })));
+    .filter(([key, value])=>isReviewDue(value) && isQuizWord(key))
+    .map(([key, value])=>{
+      const context = selectQuizContext(key, value);
+      return context ? {
+        key,
+        translation:value.translation,
+        example:context,
+        options:buildQuizOptions(key),
+        wasKnown:value.status === "known"
+      } : null;
+    })
+    .filter(Boolean));
   quizIndex = 0;
   quizScore = 0;
   quizAnswered = false;
@@ -1863,7 +2052,7 @@ function renderFlashcards(){
 
   if(practiceQueue.length === 0){
     content.innerHTML = `<div class="empty-state">
-      Нет слов для тренировки. Сначала откройте текст и добавьте слова в раздел «В изучении».
+      На сегодня повторений нет. ${escapeHtml(nextReviewSummary())}
       <br><button class="btn" id="practiceGoRead">Перейти к текстам</button>
     </div>`;
     const goRead = document.getElementById("practiceGoRead");
@@ -1881,7 +2070,7 @@ function renderFlashcards(){
     <div class="practice-wrap">
       <div class="fc-progress">
         <span>Карточка ${practiceIndex + 1}&thinsp;/&thinsp;${practiceQueue.length}</span>
-        ${item.streak > 0 ? `<span class="fc-streak">🔥 ×${item.streak}</span>` : "<span></span>"}
+        <span>${reviewDueLabel(state.userWords[item.key])}</span>
       </div>
 
       <div class="fc-scene" id="fcScene" tabindex="0" role="button" aria-label="Нажмите, чтобы перевернуть карточку">
@@ -1918,7 +2107,7 @@ function renderFlashcards(){
         <button class="btn-forgot" id="pForgot">✗ Забыл</button>
         <button class="btn-know" id="pRemember">✓ Помню</button>
       </div>
-      <div class="practice-progress">Слов в изучении: ${practiceQueue.length}</div>
+      <div class="practice-progress">К повторению: ${practiceQueue.length}</div>
       <div class="fc-keyboard-hint"><kbd class="kbd">Пробел</kbd> перевернуть &nbsp; <kbd class="kbd">→</kbd> помню &nbsp; <kbd class="kbd">←</kbd> забыл</div>
     </div>`;
 
@@ -1948,18 +2137,13 @@ function renderFlashcards(){
 
   /* ── Кнопки оценки ──────────────────────────── */
   document.getElementById("pRemember").addEventListener("click", ()=>{
-    item.streak++;
-    if(item.streak >= 3){
-      setStatus(item.key, "known");
-      practiceQueue.splice(practiceIndex, 1);
-    } else {
-      practiceQueue.push(practiceQueue.splice(practiceIndex, 1)[0]);
-    }
+    recordReview(item.key, true, item.example);
+    practiceQueue.splice(practiceIndex, 1);
     afterPracticeStep();
   });
   document.getElementById("pForgot").addEventListener("click", ()=>{
-    item.streak = 0;
-    practiceQueue.push(practiceQueue.splice(practiceIndex, 1)[0]);
+    recordReview(item.key, false, item.example);
+    practiceQueue.splice(practiceIndex, 1);
     afterPracticeStep();
   });
 
@@ -2003,7 +2187,7 @@ function renderQuiz(){
 
   if(quizQueue.length === 0){
     content.innerHTML = `<div class="empty-state">
-      Для квиза нужны слова со статусом «в изучении» и предложением-примером.
+      Сейчас нет вопросов для повторения. ${escapeHtml(nextReviewSummary())}
       <br><button class="btn" id="quizGoRead">Перейти к текстам</button>
     </div>`;
     document.getElementById("quizGoRead")?.addEventListener("click", ()=>showView("home"));
@@ -2035,7 +2219,7 @@ function renderQuiz(){
       <span>Верно: ${quizScore}</span>
     </div>
     <div class="quiz-question">
-      <div class="quiz-label">Выберите пропущенное слово</div>
+      <div class="quiz-label">${item.wasKnown ? "Новый контекст · повторение" : "Выберите пропущенное слово"}</div>
       <div class="quiz-sentence-row">
         <p class="quiz-sentence">${sentence}</p>
         <button class="tt-speak" id="quizSpeak" aria-label="Прослушать предложение" title="Прослушать предложение">${SOUND_ICON}</button>
@@ -2061,6 +2245,7 @@ function renderQuiz(){
     quizAnswered = true;
     const isCorrect = selected === item.key;
     if(isCorrect) quizScore++;
+    recordReview(item.key, isCorrect, item.example);
 
     optionButtons.forEach(button=>{
       button.disabled = true;
@@ -2070,8 +2255,8 @@ function renderQuiz(){
 
     feedback.className = "quiz-feedback " + (isCorrect ? "success" : "error");
     feedback.innerHTML = isCorrect
-      ? `<strong>Верно.</strong> ${escapeHtml(item.translation)}`
-      : `<strong>Правильный ответ: ${escapeHtml(item.key)}.</strong> ${escapeHtml(item.translation)}`;
+      ? `<strong>Верно.</strong> ${escapeHtml(item.translation)} <span class="quiz-review-note">${escapeHtml(reviewDueLabel(state.userWords[item.key]))}</span>`
+      : `<strong>Правильный ответ: ${escapeHtml(item.key)}.</strong> ${escapeHtml(item.translation)} <span class="quiz-review-note">${escapeHtml(reviewDueLabel(state.userWords[item.key]))}</span>`;
     nextBtn.classList.remove("hidden");
     nextBtn.focus();
   }
@@ -2130,7 +2315,15 @@ function wireGlobalEvents(){
     });
   });
 
+  document.querySelectorAll("[data-library-view]").forEach(button=>{
+    button.addEventListener("click", ()=>{
+      libraryView = button.dataset.libraryView;
+      renderLibrary();
+    });
+  });
+
   document.getElementById("readerBack").addEventListener("click", ()=>showView("home"));
+  document.getElementById("archiveTextBtn").addEventListener("click", toggleCurrentTextArchive);
   document.getElementById("fontDecrease").addEventListener("click", ()=>changeFontSize(-FONT_STEP));
   document.getElementById("fontIncrease").addEventListener("click", ()=>changeFontSize(FONT_STEP));
   document.getElementById("readAloudBtn").addEventListener("click", ()=>{

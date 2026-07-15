@@ -56,6 +56,10 @@
       <h2>Тексты для чтения</h2>
       <p>От простого утреннего распорядка до басни о лисе.</p>
     </div>
+    <div class="library-tabs" role="tablist" aria-label="Раздел текстов">
+      <button type="button" class="active" data-library-view="active" role="tab" aria-selected="true">Все тексты</button>
+      <button type="button" data-library-view="archive" role="tab" aria-selected="false">Архив <span id="archiveCount">0</span></button>
+    </div>
     <div class="library-grid" id="libraryGrid"></div>
 
     <div id="customFormWrap" class="hidden"></div>
@@ -75,6 +79,9 @@
       <span class="reader-progress" id="readerProgress"></span>
     </div>
     <div class="reader-body" id="readerBody"></div>
+    <div class="reader-finish">
+      <button class="btn secondary" id="archiveTextBtn" type="button">Добавить в архив</button>
+    </div>
     <div class="reader-legend">
       <span><span class="legend-swatch" style="background:var(--amber-bg);border:1px solid var(--amber);"></span>В изучении</span>
       <span><span class="legend-swatch" style="background:var(--green-bg);border:1px solid var(--green-dim);"></span>Изучено</span>
