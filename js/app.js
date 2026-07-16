@@ -1428,16 +1428,30 @@ function toggleTheme(){
   saveState();
 }
 
+function closeSettingsPanel(){
+  document.getElementById("voicePanel")?.remove();
+  document.getElementById("settingsBackdrop")?.remove();
+  document.body.classList.remove("settings-open");
+  document.getElementById("voiceSettingsBtn")?.setAttribute("aria-expanded", "false");
+}
+
 function toggleVoicePanel(){
   const existing = document.getElementById("voicePanel");
-  if(existing){ existing.remove(); return; }
+  if(existing){ closeSettingsPanel(); return; }
   loadVoices();
   const en = englishVoices();
   const active = getActiveVoice();
   const btn = document.getElementById("voiceSettingsBtn");
+  const isMobile = window.matchMedia && window.matchMedia("(max-width: 640px)").matches;
+  const backdrop = document.createElement("div");
+  backdrop.id = "settingsBackdrop";
+  backdrop.className = "settings-backdrop";
   const panel = document.createElement("div");
   panel.id = "voicePanel";
-  panel.className = "voice-panel";
+  panel.className = "voice-panel" + (isMobile ? " mobile-settings-panel" : "");
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", isMobile ? "true" : "false");
+  panel.setAttribute("aria-labelledby", "settingsTitle");
 
   let optionsHtml = `<option value="">Автоматически (лучший доступный)</option>`;
   optionsHtml += en.map(v =>
@@ -1445,7 +1459,10 @@ function toggleVoicePanel(){
   ).join("");
 
   panel.innerHTML = `
-    <h4>Настройки</h4>
+    <div class="settings-panel-head">
+      <h4 id="settingsTitle">Настройки</h4>
+      <button class="settings-close" id="settingsTopClose" type="button" aria-label="Закрыть настройки">×</button>
+    </div>
     <div class="settings-section">
       <div class="settings-label-row">
         <label for="globalFontRange">Размер учебного текста</label>
@@ -1468,13 +1485,19 @@ function toggleVoicePanel(){
     </div>
     <div class="hint">Список голосов зависит от вашего браузера и операционной системы — отличается на Windows, Mac, Android и т.д.${active ? " Сейчас используется: " + escapeHtml(active.name) + "." : ""}</div>
   `;
+  document.body.appendChild(backdrop);
   document.body.appendChild(panel);
-  const rect = btn.getBoundingClientRect();
-  panel.style.position = "absolute";
-  panel.style.top = (window.scrollY + rect.bottom + 8) + "px";
-  let left = window.scrollX + rect.right - panel.offsetWidth;
-  if(left < 8) left = 8;
-  panel.style.left = left + "px";
+  document.body.classList.toggle("settings-open", isMobile);
+  btn.setAttribute("aria-expanded", "true");
+
+  if(!isMobile){
+    const rect = btn.getBoundingClientRect();
+    panel.style.position = "absolute";
+    panel.style.top = (window.scrollY + rect.bottom + 8) + "px";
+    let left = window.scrollX + rect.right - panel.offsetWidth;
+    if(left < 8) left = 8;
+    panel.style.left = left + "px";
+  }
 
   document.getElementById("globalFontRange").addEventListener("input", (event)=>{
     state.settings.fontSize = Number(event.target.value);
@@ -1497,7 +1520,9 @@ function toggleVoicePanel(){
     }
     speak("Hello! This is how I sound when reading English texts to you.");
   });
-  document.getElementById("voiceCloseBtn").addEventListener("click", ()=>panel.remove());
+  backdrop.addEventListener("click", closeSettingsPanel);
+  document.getElementById("settingsTopClose").addEventListener("click", closeSettingsPanel);
+  document.getElementById("voiceCloseBtn").addEventListener("click", closeSettingsPanel);
 }
 
 function highlightInSentence(sentence, token){
@@ -2386,8 +2411,7 @@ function wireGlobalEvents(){
 
   document.addEventListener("click", (e)=>{
     if(!e.target.closest("#voicePanel, #voiceSettingsBtn")){
-      const panel = document.getElementById("voicePanel");
-      if(panel) panel.remove();
+      if(document.getElementById("voicePanel")) closeSettingsPanel();
     }
     const sel = window.getSelection();
     if(sel && !sel.isCollapsed && sel.toString().trim().length > 0){
