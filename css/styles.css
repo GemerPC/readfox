@@ -504,8 +504,8 @@ main{max-width:1000px;margin:0 auto;padding:36px 24px 100px;}
 .fc-example-row{display:flex;align-items:flex-start;gap:6px;max-width:380px;}
 .fc-example{
   font-family:'Lora',serif;font-style:italic;
-  font-size:calc(12px * var(--font-scale));
-  color:var(--ink-soft);line-height:1.5;flex:1;
+  font-size:calc(16px * var(--font-scale));
+  color:var(--ink-soft);line-height:1.6;flex:1;
 }
 .fc-example mark{background:var(--amber-bg);color:var(--amber);font-style:normal;font-weight:600;border-radius:2px;}
 .fc-context-back{
@@ -1248,10 +1248,11 @@ footer{
   .practice-mode-tabs{margin-bottom:16px;}
   .practice-mode-tabs button{min-height:42px;}
   .fc-progress{gap:8px;font-size:10px;}
-  .fc-scene{height:278px;margin-bottom:14px;}
+  .fc-scene{height:320px;margin-bottom:14px;}
   .fc-front,.fc-back{padding:18px 14px;gap:8px;overflow:auto;-webkit-overflow-scrolling:touch;}
   .fc-word-ru,.fc-word-en{font-size:24px;}
   .fc-example-row{max-width:100%;}
+  .fc-example,.fc-context-back{font-size:18px;line-height:1.55;}
   .practice-actions{gap:8px;margin-bottom:10px;}
   .btn-forgot,.btn-know{min-height:46px;flex:1;padding:9px 12px;}
   .fc-keyboard-hint{display:none;}
