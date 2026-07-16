@@ -15,7 +15,7 @@
 
 <header class="site-header">
   <div class="logo"><span class="mark">🦊</span>ReadFox</div>
-  <nav class="nav">
+  <nav class="nav" id="primaryNav">
     <button data-view="home" class="active">Главная</button>
     <button data-view="reader" id="navReader" class="hidden">Чтение</button>
     <button data-view="dictionary">Мой словарь</button>
@@ -26,6 +26,13 @@
     <span>Изучено: <b id="statKnown">0</b></span>
   </div>
   <div class="header-controls">
+    <button class="mobile-menu-btn" id="mobileMenuBtn" type="button" aria-label="Открыть меню" aria-expanded="false" aria-controls="primaryNav">
+      <span></span><span></span><span></span>
+    </button>
+    <button id="floatingStopBtn" class="header-stop hidden" type="button" aria-label="Остановить чтение" title="Остановить чтение">
+      <span class="header-stop-icon" aria-hidden="true"></span>
+      <span class="header-stop-label">Стоп</span>
+    </button>
     <button class="theme-toggle" id="themeToggleBtn" aria-label="Сменить тему" title="Светлая / тёмная тема">☀</button>
     <button class="gear-btn" id="voiceSettingsBtn" aria-label="Настройки" title="Настройки" aria-expanded="false" aria-controls="voicePanel">⚙</button>
   </div>
@@ -58,6 +65,7 @@
     </div>
     <div class="library-tabs" role="tablist" aria-label="Раздел текстов">
       <button type="button" class="active" data-library-view="active" role="tab" aria-selected="true">Все тексты</button>
+      <button type="button" data-library-view="mine" role="tab" aria-selected="false">Мои тексты <span id="myTextsCount">0</span></button>
       <button type="button" data-library-view="archive" role="tab" aria-selected="false">Архив <span id="archiveCount">0</span></button>
     </div>
     <div class="library-grid" id="libraryGrid"></div>
@@ -122,7 +130,6 @@
 
 <div id="tooltipLayer"></div>
 <div id="toastLayer"></div>
-<button id="floatingStopBtn" class="floating-stop hidden" aria-label="Остановить чтение">⏹ Остановить чтение</button>
 
 <script src="js/app.js"></script>
 </body>

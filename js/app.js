@@ -520,6 +520,7 @@ const STORAGE_KEY = "readfox-state";
 const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 const REVIEW_INTERVALS = [0, 20 * MINUTE_MS, DAY_MS, 3 * DAY_MS, 7 * DAY_MS, 14 * DAY_MS, 30 * DAY_MS];
+const MAX_CUSTOM_TEXTS = 40;
 let state = { userWords:{}, customTexts:[], readTextIds:[], archivedTextIds:[], settings:{voiceName:null, fontSize:19, theme:"dark"} };
 let currentText = null;
 let currentFilter = "all";
@@ -763,7 +764,7 @@ async function importDataFromFile(file){
     importedTexts.forEach(t=>{ if(t && t.id && !existingIds.has(t.id)) state.customTexts.unshift(t); });
     state.readTextIds = [...new Set([...state.readTextIds, ...importedReadIds])];
     state.archivedTextIds = [...new Set([...state.archivedTextIds, ...importedArchive])];
-    if(state.customTexts.length > 10) state.customTexts.length = 10;
+    if(state.customTexts.length > MAX_CUSTOM_TEXTS) state.customTexts.length = MAX_CUSTOM_TEXTS;
     cleanArchivedTextIds();
     const wordsAdded = Object.keys(state.userWords).length - wordCountBefore;
     refreshWordVisuals();
@@ -940,10 +941,11 @@ function renderLibrary(){
   const grid = document.getElementById("libraryGrid");
   const archivedIds = new Set(state.archivedTextIds);
   const showingArchive = libraryView === "archive";
+  const showingMine = libraryView === "mine";
   let visibleCount = 0;
   let html = "";
   TEXTS.forEach(t=>{
-    if(archivedIds.has(t.id) !== showingArchive) return;
+    if(showingMine || archivedIds.has(t.id) !== showingArchive) return;
     visibleCount++;
     html += `
     <div class="text-card" data-id="${t.id}" data-kind="built-in" tabindex="0" aria-label="Открыть текст ${escapeHtml(t.title)}">
@@ -960,11 +962,14 @@ function renderLibrary(){
     </div>`;
   });
   state.customTexts.forEach(t=>{
-    if(archivedIds.has(t.id) !== showingArchive) return;
+    const archived = archivedIds.has(t.id);
+    if(showingArchive ? !archived : (!showingMine || archived)) return;
     visibleCount++;
+    const textLevel = LEVEL_LABEL[t.level] ? t.level : "custom";
+    const textLabel = textLevel === "custom" ? LEVEL_LABEL.custom : `${LEVEL_LABEL[textLevel]} · Мой текст`;
     html += `
     <div class="text-card" data-id="${t.id}" data-kind="custom" tabindex="0" aria-label="Открыть текст ${escapeHtml(t.title)}">
-      <div class="level">${levelDotsHtml("custom")}<span>${LEVEL_LABEL.custom}</span></div>
+      <div class="level">${levelDotsHtml(textLevel)}<span>${textLabel}</span></div>
       <h3>${escapeHtml(t.title)}</h3>
       <p class="teaser">${escapeHtml(t.teaser || "Текст, который вы добавили сами.")}</p>
       <div class="row">
@@ -978,18 +983,22 @@ function renderLibrary(){
       </div>
     </div>`;
   });
-  if(!showingArchive) html += `
-    <div class="text-card add-own" id="addOwnCard">
+  if(showingMine) html += `
+    <div class="text-card add-own" id="addOwnCard" role="button" tabindex="0" aria-label="Создать свой текст">
       <div>
         <div style="font-size:28px;margin-bottom:6px;">＋</div>
-        <button id="addOwnBtn">Добавить свой текст</button>
+        <button id="addOwnBtn" type="button">Создать текст</button>
       </div>
     </div>`;
   if(showingArchive && visibleCount === 0){
     html = `<div class="empty-state library-empty">Архив пока пуст.</div>`;
+  } else if(!showingArchive && !showingMine && visibleCount === 0){
+    html = `<div class="empty-state library-empty">Все тексты прочитаны. Они находятся в архиве.</div>`;
   }
   grid.innerHTML = html;
   document.getElementById("archiveCount").textContent = state.archivedTextIds.length;
+  document.getElementById("myTextsCount").textContent =
+    state.customTexts.filter(text=>!archivedIds.has(text.id)).length;
   document.querySelectorAll("[data-library-view]").forEach(tab=>{
     const active = tab.dataset.libraryView === libraryView;
     tab.classList.toggle("active", active);
@@ -1028,7 +1037,10 @@ function renderLibrary(){
       e.stopPropagation();
       const id = btn.dataset.del;
       state.customTexts = state.customTexts.filter(x=>x.id!==id);
+      state.readTextIds = state.readTextIds.filter(textId=>textId!==id);
+      state.archivedTextIds = state.archivedTextIds.filter(textId=>textId!==id);
       renderLibrary();
+      updateStatsUI();
       const ok = await saveStateNow();
       if(!ok) showToast("Не удалось сохранить изменения. Проверьте соединение.", true);
     });
@@ -1042,53 +1054,455 @@ function renderLibrary(){
       showToast("Текст возвращён из архива");
     });
   });
-  document.getElementById("addOwnBtn")?.addEventListener("click", toggleCustomForm);
+  const addOwnCard = document.getElementById("addOwnCard");
+  const openCreator = ()=>toggleCustomForm(true);
+  document.getElementById("addOwnBtn")?.addEventListener("click", (event)=>{
+    event.stopPropagation();
+    openCreator();
+  });
+  addOwnCard?.addEventListener("click", openCreator);
+  addOwnCard?.addEventListener("keydown", (event)=>{
+    if(event.key === "Enter" || event.key === " "){
+      event.preventDefault();
+      openCreator();
+    }
+  });
 }
 
-function toggleCustomForm(){
+const TEXT_GENERATOR_PROFILES = [
+  {
+    keywords:["утро","распоряд","morning","routine"],
+    title:"A Calm Morning",
+    topic:"morning routines",
+    intro:"A calm morning can influence the rest of the day",
+    action:"prepare my clothes and breakfast the night before",
+    challenge:"I do not always wake up at the time I planned",
+    response:"keep the routine simple instead of trying to do everything",
+    detail:"A glass of water, a light breakfast, and a short walk help me feel awake",
+    outcome:"I begin the day with more energy and less stress",
+    social:"Everyone has a different schedule, so a useful routine must fit real life"
+  },
+  {
+    keywords:["работ","офис","карьер","work","job","office"],
+    title:"A Productive Day at Work",
+    topic:"daily work",
+    intro:"A productive workday depends on clear priorities rather than constant activity",
+    action:"write down three important tasks before I open my messages",
+    challenge:"Unexpected questions and small problems can interrupt the plan",
+    response:"finish one useful task before moving to the next one",
+    detail:"Short breaks and honest conversations with colleagues make difficult days easier",
+    outcome:"I finish work with a clearer mind and more time for my personal life",
+    social:"Good teamwork grows when people share information and respect each other's time"
+  },
+  {
+    keywords:["путеше","поезд","отпуск","travel","trip","holiday","vacation"],
+    title:"A Trip to a New Place",
+    topic:"travelling",
+    intro:"Travelling gives people a chance to notice how differently everyday life can work",
+    action:"check the route, the weather, and the most important documents before I leave",
+    challenge:"Delays and changes can appear even when the trip is carefully planned",
+    response:"stay flexible and keep the essential information close",
+    detail:"New streets, local food, and short conversations often become the best memories",
+    outcome:"I return home more confident and curious about the world",
+    social:"A respectful traveller observes local habits instead of expecting everything to feel familiar"
+  },
+  {
+    keywords:["еда","готов","ресторан","food","cook","cooking","restaurant"],
+    title:"Cooking at Home",
+    topic:"home cooking",
+    intro:"Cooking at home can turn an ordinary evening into a useful and relaxing experience",
+    action:"choose a simple recipe and prepare all the ingredients first",
+    challenge:"Sometimes an ingredient is missing or the meal takes longer than expected",
+    response:"replace it with something similar and learn from the result",
+    detail:"Fresh vegetables, basic spices, and careful timing can improve even a simple dish",
+    outcome:"I eat more thoughtfully and become more confident in the kitchen",
+    social:"Sharing a homemade meal is also an easy way to spend time with other people"
+  },
+  {
+    keywords:["дом","квартир","уборк","home","house","apartment","cleaning"],
+    title:"Making Home Comfortable",
+    topic:"life at home",
+    intro:"A comfortable home is created by small habits rather than expensive objects",
+    action:"put things back in their place and clean one area at a time",
+    challenge:"Busy days can quickly create disorder and make simple tasks feel tiring",
+    response:"spend ten focused minutes on the room that needs the most attention",
+    detail:"Good light, fresh air, and a clear table can completely change the atmosphere",
+    outcome:"My home feels calmer and it becomes easier to rest or concentrate",
+    social:"People who share a home need simple agreements about chores and personal space"
+  },
+  {
+    keywords:["здоров","спорт","врач","сон","health","sport","exercise","sleep"],
+    title:"A Healthy Everyday Routine",
+    topic:"everyday health",
+    intro:"Good health is usually supported by ordinary choices repeated over time",
+    action:"move regularly, drink enough water, and protect my sleep schedule",
+    challenge:"Motivation changes, especially after a stressful or very busy day",
+    response:"choose a smaller action that I can realistically complete",
+    detail:"A short walk or an earlier bedtime can be more useful than an ambitious plan that lasts one day",
+    outcome:"I notice steadier energy and recover more easily from difficult weeks",
+    social:"Healthy habits become easier when friends and family respect and support them"
+  },
+  {
+    keywords:["покуп","магазин","деньг","shopping","shop","money","budget"],
+    title:"Shopping with a Plan",
+    topic:"shopping",
+    intro:"Shopping becomes easier when a person knows what is necessary before entering a store",
+    action:"make a short list and compare the price with the quality",
+    challenge:"Bright offers and discounts can make unnecessary things look attractive",
+    response:"pause and ask whether I will really use the item",
+    detail:"Checking what is already at home prevents waste and saves both time and money",
+    outcome:"I make calmer decisions and feel less regret after buying something",
+    social:"A sensible budget still leaves room for occasional treats and enjoyable experiences"
+  },
+  {
+    keywords:["учеб","школ","англий","язык","study","school","english","language"],
+    title:"Learning a Little Every Day",
+    topic:"learning",
+    intro:"Regular practice is more powerful than a long study session once a month",
+    action:"choose one clear goal and work on it for a short period every day",
+    challenge:"Progress can feel slow when new information does not stay in memory immediately",
+    response:"review it in a new context and notice what has already improved",
+    detail:"Reading, listening, and using new words in personal examples create stronger connections",
+    outcome:"I become more confident because the subject feels familiar instead of overwhelming",
+    social:"Learning with other people can provide useful feedback and fresh ideas"
+  },
+  {
+    keywords:["технолог","телефон","интернет","компьют","technology","phone","internet","computer"],
+    title:"Technology in Daily Life",
+    topic:"everyday technology",
+    intro:"Technology saves time, but it also competes for our attention",
+    action:"use digital tools for a clear purpose and turn off unnecessary notifications",
+    challenge:"It is easy to open one application and lose much more time than expected",
+    response:"set simple limits and keep the phone away during focused work",
+    detail:"Useful technology should reduce repeated effort without controlling every quiet moment",
+    outcome:"I feel more present and still benefit from the tools I need",
+    social:"People need shared rules about phones during meals, meetings, and conversations"
+  },
+  {
+    keywords:["семь","друз","отношен","family","friend","relationship"],
+    title:"Time with Family and Friends",
+    topic:"personal relationships",
+    intro:"Strong relationships are built through attention, honesty, and ordinary shared moments",
+    action:"ask real questions and listen without preparing my answer too quickly",
+    challenge:"Different schedules and opinions can create distance or misunderstanding",
+    response:"speak calmly about the problem and look for a practical compromise",
+    detail:"A short message, a walk, or a simple meal together can maintain an important connection",
+    outcome:"I understand other people better and feel more supported myself",
+    social:"Respect includes giving others both reliable help and enough personal space"
+  },
+  {
+    keywords:["город","транспорт","автобус","метро","city","transport","bus","train"],
+    title:"Moving Around the City",
+    topic:"city transport",
+    intro:"Moving around a city requires a balance between speed, cost, and comfort",
+    action:"check the route in advance and leave a little extra time",
+    challenge:"Traffic, crowded vehicles, and sudden delays can change the journey",
+    response:"use an alternative route and remain patient with other passengers",
+    detail:"Walking part of the way can reveal useful shops, quiet streets, and new places",
+    outcome:"I arrive with less stress and understand the city more clearly",
+    social:"Public transport works better when passengers respect queues, seats, and shared space"
+  },
+  {
+    keywords:["хобби","музык","книг","фильм","hobby","music","book","film","movie"],
+    title:"Making Time for a Hobby",
+    topic:"free-time activities",
+    intro:"A hobby gives the mind a different kind of work and makes daily life more varied",
+    action:"reserve a small period of time and remove the usual distractions",
+    challenge:"It can be difficult to begin when work or household tasks feel more urgent",
+    response:"start with ten minutes instead of waiting for a perfect free evening",
+    detail:"Regular practice brings more enjoyment because small skills gradually become visible",
+    outcome:"I return to other responsibilities with better focus and a lighter mood",
+    social:"A shared hobby can introduce people who might never meet in ordinary circumstances"
+  }
+];
+
+const generatorTopicCache = {};
+
+function generatorProfileFor(topic){
+  const normalized = topic.toLowerCase();
+  return TEXT_GENERATOR_PROFILES.find(profile=>
+    profile.keywords.some(keyword=>normalized.includes(keyword))
+  ) || null;
+}
+function titleCaseTopic(topic){
+  return topic.trim().replace(/\s+/g, " ").split(" ").map(word=>
+    word ? word[0].toUpperCase() + word.slice(1).toLowerCase() : ""
+  ).join(" ");
+}
+function generatorSeed(text){
+  let hash = Date.now() % 100000;
+  for(let i=0;i<text.length;i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  return hash;
+}
+function generatorChoice(items, seed, offset){
+  return items[(seed + offset * 17) % items.length];
+}
+async function translateGeneratorTopic(topic){
+  const key = topic.toLowerCase();
+  if(generatorTopicCache.hasOwnProperty(key)) return generatorTopicCache[key];
+  let result = null;
+  if(/[а-яё]/i.test(topic)){
+    try{
+      const response = await fetchWithTimeout(
+        "https://api.mymemory.translated.net/get?q=" + encodeURIComponent(topic) + "&langpair=ru|en", 4500);
+      if(response.ok){
+        const data = await response.json();
+        const translated = data && data.responseData && data.responseData.translatedText;
+        if(translated && /[a-z]/i.test(translated) && !/mymemory warning|no query/i.test(translated)){
+          result = translated.trim().replace(/[.!?]+$/g, "");
+        }
+      }
+    }catch(e){ /* генератор остаётся полностью рабочим с локальным шаблоном */ }
+  }
+  generatorTopicCache[key] = result;
+  return result;
+}
+function buildGeneratedStudyText(profile, level, seed){
+  const insight = generatorChoice([
+    "Small changes are easier to repeat, and repeated actions usually matter more than a perfect beginning",
+    "The most useful plan is not the most impressive one, but the one that can survive an ordinary busy day",
+    "Paying attention to real experience helps people adjust their habits instead of blaming themselves"
+  ], seed, 1);
+  const reflection = generatorChoice([
+    "This makes the subject practical rather than theoretical",
+    "As a result, the experience becomes easier to understand and manage",
+    "That perspective helps me notice progress that would otherwise be easy to miss"
+  ], seed, 2);
+  const closing = generatorChoice([
+    "The goal is not to control every detail, but to make thoughtful choices more often",
+    "In the long term, consistency creates a stronger result than occasional enthusiasm",
+    "For me, improvement begins when a useful idea becomes part of a normal day"
+  ], seed, 3);
+
+  if(level === "beginner"){
+    return `${profile.intro}. This topic is part of everyday life. Small choices can make a big difference.
+
+I usually ${profile.action}. ${profile.challenge}. When this happens, I try to ${profile.response}. ${profile.detail}.
+
+${profile.outcome}. ${profile.social}. I want to improve this part of my life one small step at a time.`;
+  }
+  if(level === "advanced"){
+    return `${profile.intro}. What makes ${profile.topic} interesting is the relationship between personal choice and circumstances that cannot always be controlled. ${insight}.
+
+On an ordinary day, I ${profile.action}. Nevertheless, ${profile.challenge.charAt(0).toLowerCase() + profile.challenge.slice(1)}. Rather than abandoning the plan completely, I try to ${profile.response}. ${profile.detail}. ${reflection}.
+
+${profile.outcome}. At the same time, ${profile.social.charAt(0).toLowerCase() + profile.social.slice(1)}. This balance matters because individual habits also influence the people and places around us. ${closing}.`;
+  }
+  return `${profile.intro}. This part of life may look ordinary, but it can affect the way people use their time, attention, and energy. ${insight}.
+
+On a normal day, I ${profile.action}. However, ${profile.challenge.charAt(0).toLowerCase() + profile.challenge.slice(1)}. When the plan changes, I try to ${profile.response}. ${profile.detail}. ${reflection}.
+
+${profile.outcome}. ${profile.social}. The routine is not perfect, but it becomes more useful when I review what worked and change what did not. ${closing}.`;
+}
+async function generateStudyText(topic, level){
+  let profile = generatorProfileFor(topic);
+  const translatedTopic = profile ? null : await translateGeneratorTopic(topic);
+  if(!profile && translatedTopic) profile = generatorProfileFor(translatedTopic);
+  if(!profile){
+    const englishTopic = translatedTopic || (/[a-z]/i.test(topic) ? topic : "an everyday subject");
+    profile = {
+      title: englishTopic === "an everyday subject" ? "An Everyday Topic" : titleCaseTopic(englishTopic),
+      topic: englishTopic.toLowerCase(),
+      intro:`The subject of ${englishTopic.toLowerCase()} becomes clearer when it is connected to everyday experience`,
+      action:"observe one real example and write down the most important details",
+      challenge:"New questions often appear when I compare an idea with real life",
+      response:"look for reliable information and consider more than one point of view",
+      detail:"A concrete example makes difficult vocabulary and abstract ideas easier to remember",
+      outcome:"I understand the subject more deeply and can explain it in my own words",
+      social:"Discussing the topic with another person can reveal details that one reader may overlook"
+    };
+  }
+  const seed = generatorSeed(topic + level);
+  const body = buildGeneratedStudyText(profile, level, seed);
+  return {
+    title:profile.title,
+    body,
+    teaser:(body.match(/^[^.!?]+[.!?]/) || [body])[0].trim()
+  };
+}
+
+function closeCustomForm(){
   const wrap = document.getElementById("customFormWrap");
-  if(!wrap.classList.contains("hidden")){
-    wrap.classList.add("hidden");
-    wrap.innerHTML = "";
+  wrap.classList.add("hidden");
+  wrap.innerHTML = "";
+}
+async function saveCustomText({title, body, level, generated, topic, openAfter}){
+  const obj = {
+    id:"custom-" + Date.now(),
+    title:title.trim() || "Мой текст",
+    level:LEVEL_LABEL[level] ? level : "custom",
+    teaser:(body.match(/^[^.!?]+[.!?]/) || ["Текст, который вы добавили сами."])[0].trim(),
+    body:body.trim(),
+    generated:!!generated,
+    generatorTopic:topic || "",
+    createdAt:Date.now()
+  };
+  state.customTexts.unshift(obj);
+  if(state.customTexts.length > MAX_CUSTOM_TEXTS) state.customTexts.length = MAX_CUSTOM_TEXTS;
+  libraryView = "mine";
+  const ok = await saveStateNow();
+  closeCustomForm();
+  renderLibrary();
+  if(openAfter) openText(obj);
+  else document.getElementById("libraryGrid").scrollIntoView({behavior:"smooth", block:"start"});
+  showToast(ok ? "Текст сохранён в «Мои тексты»" : "Текст добавлен, но сохранить его не удалось.", !ok);
+}
+
+function toggleCustomForm(forceOpen = false){
+  const wrap = document.getElementById("customFormWrap");
+  if(!forceOpen && !wrap.classList.contains("hidden")){
+    closeCustomForm();
     return;
   }
   wrap.classList.remove("hidden");
   wrap.innerHTML = `
     <div class="custom-form">
-      <label for="customTitle">Название текста</label>
-      <input id="customTitle" type="text" placeholder="Например: Статья из блога">
-      <label for="customBody">Текст на английском</label>
-      <textarea id="customBody" placeholder="Вставьте сюда любой английский текст…"></textarea>
-      <div class="actions">
-        <button class="btn" id="customSubmit">Начать чтение</button>
-        <button class="btn secondary" id="customCancel">Отмена</button>
+      <div class="custom-form-head">
+        <h3>Создать текст</h3>
+        <button class="custom-form-close" id="customCancel" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <div class="custom-mode-tabs" role="tablist" aria-label="Способ создания текста">
+        <button class="active" type="button" data-custom-mode="generator" role="tab" aria-selected="true">Генератор</button>
+        <button type="button" data-custom-mode="manual" role="tab" aria-selected="false">Вставить текст</button>
+      </div>
+
+      <div id="generatorTextPanel">
+        <div class="generator-fields">
+          <div>
+            <label for="generatorTopic">Тема</label>
+            <input id="generatorTopic" type="text" maxlength="80" placeholder="Например: путешествие, работа, технологии">
+          </div>
+          <div>
+            <label for="generatorLevel">Уровень</label>
+            <select id="generatorLevel">
+              <option value="beginner">A1–A2</option>
+              <option value="intermediate" selected>B1</option>
+              <option value="advanced">B2</option>
+            </select>
+          </div>
+        </div>
+        <div class="generator-actions">
+          <button class="btn" id="generateTextBtn" type="button">Сгенерировать</button>
+          <span class="generator-note" id="generatorStatus" role="status" aria-live="polite"></span>
+        </div>
+        <div class="generated-preview hidden" id="generatedPreview">
+          <span class="generated-badge" id="generatedBadge">Черновик</span>
+          <label for="generatedTitle">Название</label>
+          <input id="generatedTitle" type="text" maxlength="100">
+          <label for="generatedBody">Текст</label>
+          <textarea id="generatedBody"></textarea>
+          <div class="actions">
+            <button class="btn secondary" id="saveGeneratedBtn" type="button">Сохранить</button>
+            <button class="btn" id="readGeneratedBtn" type="button">Сохранить и читать</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="manual-text-panel hidden" id="manualTextPanel">
+        <div class="generator-fields">
+          <div>
+            <label for="manualTitle">Название</label>
+            <input id="manualTitle" type="text" maxlength="100" placeholder="Например: Статья из блога">
+          </div>
+          <div>
+            <label for="manualLevel">Уровень</label>
+            <select id="manualLevel">
+              <option value="custom" selected>Не указан</option>
+              <option value="beginner">A1–A2</option>
+              <option value="intermediate">B1</option>
+              <option value="advanced">B2</option>
+            </select>
+          </div>
+        </div>
+        <label for="manualBody">Текст на английском</label>
+        <textarea id="manualBody" placeholder="Вставьте английский текст"></textarea>
+        <div class="actions">
+          <button class="btn secondary" id="saveManualBtn" type="button">Сохранить</button>
+          <button class="btn" id="readManualBtn" type="button">Сохранить и читать</button>
+        </div>
       </div>
     </div>`;
-  document.getElementById("customCancel").addEventListener("click", toggleCustomForm);
-  document.getElementById("customSubmit").addEventListener("click", async ()=>{
-    const title = document.getElementById("customTitle").value.trim() || "Мой текст";
-    const body = document.getElementById("customBody").value.trim();
-    if(!body){
-      document.getElementById("customBody").focus();
+  document.getElementById("customCancel").addEventListener("click", closeCustomForm);
+  document.querySelectorAll("[data-custom-mode]").forEach(button=>{
+    button.addEventListener("click", ()=>{
+      const generatorMode = button.dataset.customMode === "generator";
+      document.getElementById("generatorTextPanel").classList.toggle("hidden", !generatorMode);
+      document.getElementById("manualTextPanel").classList.toggle("hidden", generatorMode);
+      document.querySelectorAll("[data-custom-mode]").forEach(tab=>{
+        const active = tab === button;
+        tab.classList.toggle("active", active);
+        tab.setAttribute("aria-selected", String(active));
+      });
+      (generatorMode ? document.getElementById("generatorTopic") : document.getElementById("manualTitle")).focus();
+    });
+  });
+
+  document.getElementById("generateTextBtn").addEventListener("click", async ()=>{
+    const topicInput = document.getElementById("generatorTopic");
+    const topic = topicInput.value.trim();
+    if(!topic){
+      topicInput.focus();
       return;
     }
-    const submitBtn = document.getElementById("customSubmit");
-    submitBtn.disabled = true;
-    submitBtn.textContent = "Сохраняем…";
-    const obj = {
-      id: "custom-" + Date.now(),
-      title, level:"custom", teaser:"",
-      body
-    };
-    state.customTexts.unshift(obj);
-    if(state.customTexts.length > 10) state.customTexts.length = 10;
-    const ok = await saveStateNow();
-    toggleCustomForm();
-    renderLibrary();
-    openText(obj);
-    showToast(ok ? "Текст сохранён" : "Текст добавлен, но не удалось сохранить его — он может пропасть после перезагрузки.", !ok);
+    const level = document.getElementById("generatorLevel").value;
+    const button = document.getElementById("generateTextBtn");
+    const status = document.getElementById("generatorStatus");
+    button.disabled = true;
+    button.textContent = "Создаём…";
+    status.textContent = "";
+    try{
+      const generated = await generateStudyText(topic, level);
+      document.getElementById("generatedTitle").value = generated.title;
+      document.getElementById("generatedBody").value = generated.body;
+      document.getElementById("generatedBadge").textContent =
+        `Черновик · ${level === "beginner" ? "A1–A2" : level === "advanced" ? "B2" : "B1"}`;
+      document.getElementById("generatedPreview").classList.remove("hidden");
+      button.textContent = "Другой вариант";
+      document.getElementById("generatedPreview").scrollIntoView({behavior:"smooth", block:"nearest"});
+    }catch(e){
+      status.textContent = "Не удалось создать текст. Попробуйте другую тему.";
+      button.textContent = "Сгенерировать";
+    } finally {
+      button.disabled = false;
+    }
   });
+
+  async function submitGenerated(openAfter){
+    const body = document.getElementById("generatedBody").value.trim();
+    if(!body){
+      document.getElementById("generatedBody").focus();
+      return;
+    }
+    await saveCustomText({
+      title:document.getElementById("generatedTitle").value,
+      body,
+      level:document.getElementById("generatorLevel").value,
+      generated:true,
+      topic:document.getElementById("generatorTopic").value.trim(),
+      openAfter
+    });
+  }
+  async function submitManual(openAfter){
+    const body = document.getElementById("manualBody").value.trim();
+    if(!body){
+      document.getElementById("manualBody").focus();
+      return;
+    }
+    await saveCustomText({
+      title:document.getElementById("manualTitle").value,
+      body,
+      level:document.getElementById("manualLevel").value,
+      generated:false,
+      topic:"",
+      openAfter
+    });
+  }
+  document.getElementById("saveGeneratedBtn").addEventListener("click", ()=>submitGenerated(false));
+  document.getElementById("readGeneratedBtn").addEventListener("click", ()=>submitGenerated(true));
+  document.getElementById("saveManualBtn").addEventListener("click", ()=>submitManual(false));
+  document.getElementById("readManualBtn").addEventListener("click", ()=>submitManual(true));
   wrap.scrollIntoView({behavior:"smooth", block:"start"});
+  document.getElementById("generatorTopic").focus();
 }
 
 /* ============================================================
@@ -1292,8 +1706,8 @@ function clearSpeakingHighlight(){
 function resetReadAloudButton(){
   const btn = document.getElementById("readAloudBtn");
   if(btn){ btn.innerHTML = SOUND_ICON + " Слушать текст"; btn.dataset.playing = "0"; }
-  const floatBtn = document.getElementById("floatingStopBtn");
-  if(floatBtn) floatBtn.classList.add("hidden");
+  const stopBtn = document.getElementById("floatingStopBtn");
+  if(stopBtn) stopBtn.classList.add("hidden");
   clearSpeakingHighlight();
 }
 function playAudioUrl(url, fallbackText){
@@ -1313,10 +1727,8 @@ function stopReading(){
   resetReadAloudButton();
 }
 
-// Отличаем прокрутку, которую вызвали мы сами (чтобы показать читаемое
-// слово), от прокрутки, которую сделал пользователь вручную. Если человек
-// прокручивает сам — например, чтобы подняться и нажать «Остановить» —
-// на несколько секунд перестаём «возвращать» его вниз.
+// Отличаем прокрутку, которую вызвали мы сами для подсветки читаемого слова,
+// от ручной прокрутки пользователя и ненадолго уступаем ей приоритет.
 let lastProgrammaticScrollAt = 0;
 let userScrollSuspendUntil = 0;
 window.addEventListener("scroll", ()=>{
@@ -1360,8 +1772,8 @@ function readTextAloud(text){
     const el = wordSpans[idx];
     if(el){
       el.classList.add("word-speaking");
-      // Подсветка обновляется всегда; а вот навязчивую прокрутку приостанавливаем,
-      // если человек только что сам листал страницу (например, тянется к «Стоп»).
+      // Подсветка обновляется всегда, а автоматическую прокрутку приостанавливаем,
+      // если человек только что сам листал страницу.
       if(Date.now() >= userScrollSuspendUntil){
         lastProgrammaticScrollAt = Date.now();
         el.scrollIntoView({behavior:"smooth", block:"nearest"});
@@ -1384,10 +1796,8 @@ function readTextAloud(text){
   utterances[utterances.length - 1].onerror = resetReadAloudButton;
   utterances.forEach(u=>window.speechSynthesis.speak(u));
   if(btn){ btn.textContent = "⏹ Остановить"; btn.dataset.playing = "1"; }
-  // Плавающая кнопка «Стоп» — всегда на экране, не нужно прокручивать
-  // вверх к панели чтения, чтобы остановить озвучку.
-  const floatBtn = document.getElementById("floatingStopBtn");
-  if(floatBtn) floatBtn.classList.remove("hidden");
+  const stopBtn = document.getElementById("floatingStopBtn");
+  if(stopBtn) stopBtn.classList.remove("hidden");
 }
 
 /* ============================================================
@@ -1433,6 +1843,27 @@ function closeSettingsPanel(){
   document.getElementById("settingsBackdrop")?.remove();
   document.body.classList.remove("settings-open");
   document.getElementById("voiceSettingsBtn")?.setAttribute("aria-expanded", "false");
+}
+
+function closeMobileMenu(){
+  const nav = document.getElementById("primaryNav");
+  const button = document.getElementById("mobileMenuBtn");
+  nav?.classList.remove("mobile-open");
+  button?.classList.remove("active");
+  button?.setAttribute("aria-expanded", "false");
+  button?.setAttribute("aria-label", "Открыть меню");
+}
+
+function toggleMobileMenu(){
+  const nav = document.getElementById("primaryNav");
+  const button = document.getElementById("mobileMenuBtn");
+  if(!nav || !button) return;
+  const opening = !nav.classList.contains("mobile-open");
+  closeSettingsPanel();
+  nav.classList.toggle("mobile-open", opening);
+  button.classList.toggle("active", opening);
+  button.setAttribute("aria-expanded", String(opening));
+  button.setAttribute("aria-label", opening ? "Закрыть меню" : "Открыть меню");
 }
 
 function toggleVoicePanel(){
@@ -1604,15 +2035,6 @@ async function fetchTranscription(word){
   }catch(e){ /* словарь недоступен — транскрипцию просто не показываем */ }
   transcriptionCache[k] = result;
   return result;
-}
-
-async function fetchPhraseTranscription(text){
-  const tokens = text.match(/[A-Za-z']+/g) || [];
-  if(!tokens.length) return null;
-  if(tokens.length > 20) return null;
-  const parts = await Promise.all(tokens.map(token=>fetchTranscription(token)));
-  const ipa = parts.map((part, index)=>part && part.ipa ? part.ipa : tokens[index]).join(" ");
-  return parts.some(Boolean) ? ipa : null;
 }
 
 let tooltipRequestId = 0;
@@ -1946,7 +2368,7 @@ function renderDictionary(){
       ${v.example ? `<div class="ex-row">
         <div class="ex">${highlightInSentence(v.example, key)}</div>
         <button class="tt-speak tt-speak-sm" data-speak-example="${escapeHtml(v.example)}" aria-label="Прочитать предложение" title="Прочитать предложение">${SOUND_ICON}</button>
-      </div><div class="dict-ex-ipa loading" data-ex-ipa="${escapeHtml(v.example)}">ищем транскрипцию примера…</div>` : ""}
+      </div>` : ""}
       <div class="dict-review ${isReviewDue(v) ? "due" : ""}">${reviewDueLabel(v)}</div>
       <span class="badge ${v.status}">${v.status==="known" ? "изучено" : "в изучении"}</span>
       ${v.type==="phrase" ? `<span class="badge" style="background:var(--amber-soft2);color:var(--ink-soft);">фраза</span>` : ""}
@@ -1985,13 +2407,6 @@ function renderDictionary(){
     });
   });
 
-  content.querySelectorAll(".dict-ex-ipa").forEach(ipaEl=>{
-    fetchPhraseTranscription(ipaEl.dataset.exIpa).then(ipa=>{
-      if(!ipaEl.isConnected) return;
-      if(ipa){ ipaEl.textContent = ipa; ipaEl.classList.remove("loading"); }
-      else ipaEl.remove();
-    });
-  });
 }
 
 /* ============================================================
@@ -2347,6 +2762,7 @@ function wireGlobalEvents(){
       showView(view);
       if(view === "dictionary") renderDictionary();
       if(view === "practice") resetPracticeSession();
+      closeMobileMenu();
     });
   });
 
@@ -2365,6 +2781,7 @@ function wireGlobalEvents(){
   document.querySelectorAll("[data-library-view]").forEach(button=>{
     button.addEventListener("click", ()=>{
       libraryView = button.dataset.libraryView;
+      closeCustomForm();
       renderLibrary();
     });
   });
@@ -2405,11 +2822,17 @@ function wireGlobalEvents(){
   });
   document.getElementById("voiceSettingsBtn").addEventListener("click", (e)=>{
     e.stopPropagation();
+    closeMobileMenu();
     toggleVoicePanel();
+  });
+  document.getElementById("mobileMenuBtn").addEventListener("click", (e)=>{
+    e.stopPropagation();
+    toggleMobileMenu();
   });
   document.getElementById("themeToggleBtn").addEventListener("click", toggleTheme);
 
   document.addEventListener("click", (e)=>{
+    if(!e.target.closest("#primaryNav, #mobileMenuBtn")) closeMobileMenu();
     if(!e.target.closest("#voicePanel, #voiceSettingsBtn")){
       if(document.getElementById("voicePanel")) closeSettingsPanel();
     }
@@ -2423,6 +2846,12 @@ function wireGlobalEvents(){
       return;
     }
     if(!e.target.closest("#tooltipLayer")) hideTooltip();
+  });
+  document.addEventListener("keydown", (e)=>{
+    if(e.key === "Escape"){
+      closeMobileMenu();
+      closeSettingsPanel();
+    }
   });
 
   // Считаем, удерживается ли сейчас мышь/палец — это нужно, чтобы не
