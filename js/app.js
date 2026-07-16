@@ -520,7 +520,7 @@ const STORAGE_KEY = "readfox-state";
 const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 const REVIEW_INTERVALS = [0, 20 * MINUTE_MS, DAY_MS, 3 * DAY_MS, 7 * DAY_MS, 14 * DAY_MS, 30 * DAY_MS];
-let state = { userWords:{}, customTexts:[], readTextIds:[], archivedTextIds:[], settings:{voiceName:null, fontSize:19, dictionaryFontScale:1.15, theme:"dark"} };
+let state = { userWords:{}, customTexts:[], readTextIds:[], archivedTextIds:[], settings:{voiceName:null, fontSize:19, theme:"dark"} };
 let currentText = null;
 let currentFilter = "all";
 let libraryView = "active";
@@ -633,7 +633,6 @@ async function loadState(){
       Object.values(state.userWords).forEach(normalizeReviewState);
       cleanArchivedTextIds();
       if(typeof state.settings.fontSize !== "number") state.settings.fontSize = 19;
-      if(typeof state.settings.dictionaryFontScale !== "number") state.settings.dictionaryFontScale = 1.15;
       if(!state.settings.theme) state.settings.theme = "dark";
     }
   }catch(e){
@@ -1396,16 +1395,15 @@ function readTextAloud(text){
    (чтение, подсказки, словарь, тренировка), а не только в самом тексте.
    ============================================================ */
 const FONT_BASE = 19, FONT_MIN = 15, FONT_MAX = 30, FONT_STEP = 2;
-const DICT_FONT_MIN = .9, DICT_FONT_MAX = 1.6, DICT_FONT_STEP = .1;
 function applyFontSize(){
   const size = (state.settings && state.settings.fontSize) || FONT_BASE;
   const scale = size / FONT_BASE;
   document.documentElement.style.setProperty("--reader-font-size", size + "px");
   document.documentElement.style.setProperty("--font-scale", scale.toFixed(3));
-}
-function applyDictionaryFontSize(){
-  const scale = (state.settings && state.settings.dictionaryFontScale) || 1.15;
-  document.documentElement.style.setProperty("--dict-font-scale", scale.toFixed(2));
+  const output = document.getElementById("globalFontValue");
+  if(output) output.textContent = size + " px";
+  const slider = document.getElementById("globalFontRange");
+  if(slider) slider.value = String(size);
 }
 function changeFontSize(delta){
   let size = ((state.settings && state.settings.fontSize) || FONT_BASE) + delta;
@@ -1414,14 +1412,6 @@ function changeFontSize(delta){
   applyFontSize();
   saveState();
 }
-function changeDictionaryFontSize(delta){
-  const current = (state.settings && state.settings.dictionaryFontScale) || 1.15;
-  const scale = Math.max(DICT_FONT_MIN, Math.min(DICT_FONT_MAX, current + delta));
-  state.settings.dictionaryFontScale = Math.round(scale * 10) / 10;
-  applyDictionaryFontSize();
-  saveState();
-}
-
 /* ============================================================
    ТЕМА (СВЕТЛАЯ / ТЁМНАЯ)
    ============================================================ */
@@ -1455,8 +1445,23 @@ function toggleVoicePanel(){
   ).join("");
 
   panel.innerHTML = `
-    <h4>Голос для озвучки</h4>
+    <h4>Настройки</h4>
+    <div class="settings-section">
+      <div class="settings-label-row">
+        <label for="globalFontRange">Размер учебного текста</label>
+        <output id="globalFontValue">${(state.settings.fontSize || FONT_BASE)} px</output>
+      </div>
+      <input class="settings-range" id="globalFontRange" type="range" min="${FONT_MIN}" max="${FONT_MAX}" step="1" value="${state.settings.fontSize || FONT_BASE}">
+      <div class="settings-preview">
+        <span class="preview-word">background</span>
+        <span class="preview-ipa">/ˈbæk.ɡraʊnd/</span>
+        <span class="preview-context">Soft music plays quietly in the background.</span>
+      </div>
+    </div>
+    <div class="settings-section">
+      <label class="settings-section-title" for="voiceSelect">Голос для озвучки</label>
     ${en.length ? `<select id="voiceSelect">${optionsHtml}</select>` : `<div class="hint">Браузер пока не отдал список голосов — некоторые browsers (например, мобильный Safari) подгружают их только после первого звука. Нажмите «Проверить».</div>`}
+    </div>
     <div class="actions">
       <button class="primary" id="voiceTestBtn">▶ Проверить</button>
       <button id="voiceCloseBtn">Закрыть</button>
@@ -1467,10 +1472,15 @@ function toggleVoicePanel(){
   const rect = btn.getBoundingClientRect();
   panel.style.position = "absolute";
   panel.style.top = (window.scrollY + rect.bottom + 8) + "px";
-  let left = window.scrollX + rect.right - 280;
+  let left = window.scrollX + rect.right - panel.offsetWidth;
   if(left < 8) left = 8;
   panel.style.left = left + "px";
 
+  document.getElementById("globalFontRange").addEventListener("input", (event)=>{
+    state.settings.fontSize = Number(event.target.value);
+    applyFontSize();
+    saveState();
+  });
   const select = document.getElementById("voiceSelect");
   if(select){
     select.addEventListener("change", ()=>{
@@ -2338,8 +2348,6 @@ function wireGlobalEvents(){
   document.getElementById("archiveTextBtn").addEventListener("click", toggleCurrentTextArchive);
   document.getElementById("fontDecrease").addEventListener("click", ()=>changeFontSize(-FONT_STEP));
   document.getElementById("fontIncrease").addEventListener("click", ()=>changeFontSize(FONT_STEP));
-  document.getElementById("dictFontDecrease").addEventListener("click", ()=>changeDictionaryFontSize(-DICT_FONT_STEP));
-  document.getElementById("dictFontIncrease").addEventListener("click", ()=>changeDictionaryFontSize(DICT_FONT_STEP));
   document.getElementById("readAloudBtn").addEventListener("click", ()=>{
     const btn = document.getElementById("readAloudBtn");
     if(btn.dataset.playing === "1"){
@@ -2479,7 +2487,6 @@ async function init(){
   await loadState();
   applyTheme();
   applyFontSize();
-  applyDictionaryFontSize();
   renderLibrary();
   renderDemoSentence();
   updateStatsUI();
