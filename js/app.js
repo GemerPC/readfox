@@ -520,7 +520,7 @@ const STORAGE_KEY = "readfox-state";
 const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 const REVIEW_INTERVALS = [0, 20 * MINUTE_MS, DAY_MS, 3 * DAY_MS, 7 * DAY_MS, 14 * DAY_MS, 30 * DAY_MS];
-let state = { userWords:{}, customTexts:[], readTextIds:[], archivedTextIds:[], settings:{voiceName:null, fontSize:19, theme:"dark"} };
+let state = { userWords:{}, customTexts:[], readTextIds:[], archivedTextIds:[], settings:{voiceName:null, fontSize:19, dictionaryFontScale:1.15, theme:"dark"} };
 let currentText = null;
 let currentFilter = "all";
 let libraryView = "active";
@@ -633,6 +633,7 @@ async function loadState(){
       Object.values(state.userWords).forEach(normalizeReviewState);
       cleanArchivedTextIds();
       if(typeof state.settings.fontSize !== "number") state.settings.fontSize = 19;
+      if(typeof state.settings.dictionaryFontScale !== "number") state.settings.dictionaryFontScale = 1.15;
       if(!state.settings.theme) state.settings.theme = "dark";
     }
   }catch(e){
@@ -1395,17 +1396,29 @@ function readTextAloud(text){
    (чтение, подсказки, словарь, тренировка), а не только в самом тексте.
    ============================================================ */
 const FONT_BASE = 19, FONT_MIN = 15, FONT_MAX = 30, FONT_STEP = 2;
+const DICT_FONT_MIN = .9, DICT_FONT_MAX = 1.6, DICT_FONT_STEP = .1;
 function applyFontSize(){
   const size = (state.settings && state.settings.fontSize) || FONT_BASE;
   const scale = size / FONT_BASE;
   document.documentElement.style.setProperty("--reader-font-size", size + "px");
   document.documentElement.style.setProperty("--font-scale", scale.toFixed(3));
 }
+function applyDictionaryFontSize(){
+  const scale = (state.settings && state.settings.dictionaryFontScale) || 1.15;
+  document.documentElement.style.setProperty("--dict-font-scale", scale.toFixed(2));
+}
 function changeFontSize(delta){
   let size = ((state.settings && state.settings.fontSize) || FONT_BASE) + delta;
   size = Math.max(FONT_MIN, Math.min(FONT_MAX, size));
   state.settings.fontSize = size;
   applyFontSize();
+  saveState();
+}
+function changeDictionaryFontSize(delta){
+  const current = (state.settings && state.settings.dictionaryFontScale) || 1.15;
+  const scale = Math.max(DICT_FONT_MIN, Math.min(DICT_FONT_MAX, current + delta));
+  state.settings.dictionaryFontScale = Math.round(scale * 10) / 10;
+  applyDictionaryFontSize();
   saveState();
 }
 
@@ -2089,7 +2102,6 @@ function renderFlashcards(){
                 <button class="tt-speak tt-speak-sm" id="pSpeakEx" aria-label="Прочитать" title="Прочитать">${SOUND_ICON}</button>
               </div>
             ` : ""}
-            <div class="fc-hint">нажмите, чтобы увидеть перевод</div>
           </div>
 
           <div class="fc-back">
@@ -2326,6 +2338,8 @@ function wireGlobalEvents(){
   document.getElementById("archiveTextBtn").addEventListener("click", toggleCurrentTextArchive);
   document.getElementById("fontDecrease").addEventListener("click", ()=>changeFontSize(-FONT_STEP));
   document.getElementById("fontIncrease").addEventListener("click", ()=>changeFontSize(FONT_STEP));
+  document.getElementById("dictFontDecrease").addEventListener("click", ()=>changeDictionaryFontSize(-DICT_FONT_STEP));
+  document.getElementById("dictFontIncrease").addEventListener("click", ()=>changeDictionaryFontSize(DICT_FONT_STEP));
   document.getElementById("readAloudBtn").addEventListener("click", ()=>{
     const btn = document.getElementById("readAloudBtn");
     if(btn.dataset.playing === "1"){
@@ -2465,6 +2479,7 @@ async function init(){
   await loadState();
   applyTheme();
   applyFontSize();
+  applyDictionaryFontSize();
   renderLibrary();
   renderDemoSentence();
   updateStatsUI();
