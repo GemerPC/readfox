@@ -1264,6 +1264,10 @@ function aiGeneratorEndpoint(){
   const configured = window.READFOX_CONFIG && window.READFOX_CONFIG.aiGeneratorEndpoint;
   return typeof configured === "string" ? configured.trim() : "";
 }
+function aiTranslatorEndpoint(){
+  const endpoint = aiGeneratorEndpoint();
+  return /\/generate\/?$/i.test(endpoint) ? endpoint.replace(/\/generate\/?$/i, "/translate") : "";
+}
 function generatorLevelCode(level){
   if(level === "beginner") return "A1-A2";
   if(level === "advanced") return "B2";
@@ -1319,6 +1323,28 @@ async function translateGeneratorTopic(topic){
   }
   generatorTopicCache[key] = result;
   return result;
+}
+
+async function translateGeneratorTopicWithAi(topic){
+  const endpoint = aiTranslatorEndpoint();
+  if(!endpoint) throw new Error("AI translation endpoint is not configured");
+  const response = await fetchWithTimeout(endpoint, 30000, {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({topic})
+  });
+  let data = null;
+  try{ data = await response.json(); }catch(e){ /* handled below */ }
+  if(!response.ok){
+    throw new Error(data && data.error ? data.error : `Translation request failed: ${response.status}`);
+  }
+  const translated = data && typeof data.translatedTopic === "string"
+    ? data.translatedTopic.trim().replace(/[.!?]+$/g, "")
+    : "";
+  if(!translated || !/[a-z]/i.test(translated) || /[а-яё]/i.test(translated)){
+    throw new Error("AI returned an invalid topic translation");
+  }
+  return translated;
 }
 function buildGeneratedStudyText(profile, level, seed){
   const insight = generatorChoice([
@@ -1390,10 +1416,25 @@ async function generateAiStudyText(topic, level, options = {}){
   if(!endpoint) throw new Error("AI endpoint is not configured");
   const mode = options.mode === "words" ? "words" : "topic";
   const words = Array.isArray(options.words) ? options.words.slice(0, 8) : [];
+  let translatedTopic = "";
+  let requestTopic = topic;
+  if(mode === "topic" && /[а-яё]/i.test(topic)){
+    try{
+      translatedTopic = await translateGeneratorTopicWithAi(topic);
+    }catch(aiTranslationError){
+      translatedTopic = await translateGeneratorTopic(topic);
+    }
+    if(!translatedTopic){
+      const error = new Error("The Russian topic could not be translated");
+      error.code = "topic-translation";
+      throw error;
+    }
+    requestTopic = translatedTopic;
+  }
   const response = await fetchWithTimeout(endpoint, 45000, {
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({topic, level:generatorLevelCode(level), mode, words})
+    body:JSON.stringify({topic:requestTopic, originalTopic:topic, level:generatorLevelCode(level), mode, words})
   });
   let data = null;
   try{ data = await response.json(); }catch(e){ /* ниже покажем общую ошибку */ }
@@ -1411,22 +1452,15 @@ async function generateAiStudyText(topic, level, options = {}){
     teaser:(body.match(/^[^.!?]+[.!?]/) || [body])[0].trim(),
     source:"ai",
     mode,
-    requestedWords:words
+    requestedWords:words,
+    translatedTopic
   };
 }
 
 async function generateStudyText(topic, level, options = {}){
   const mode = options.mode === "words" ? "words" : "topic";
   if(aiGeneratorEndpoint()){
-    try{
-      return await generateAiStudyText(topic, level, options);
-    }catch(e){
-      if(mode === "words") throw e;
-      const fallback = await generateLocalStudyText(topic, level);
-      fallback.source = "local-fallback";
-      fallback.warning = "ИИ-сервис сейчас недоступен. Создан локальный черновик.";
-      return fallback;
-    }
+    return generateAiStudyText(topic, level, options);
   }
   if(mode === "words") throw new Error("AI endpoint is not configured");
   const local = await generateLocalStudyText(topic, level);
@@ -1439,7 +1473,7 @@ function closeCustomForm(){
   wrap.classList.add("hidden");
   wrap.innerHTML = "";
 }
-async function saveCustomText({title, body, level, generated, generatorSource, topic, generatorWords, openAfter}){
+async function saveCustomText({title, body, level, generated, generatorSource, topic, translatedTopic, generatorWords, openAfter}){
   const obj = {
     id:"custom-" + Date.now(),
     title:title.trim() || "Мой текст",
@@ -1449,6 +1483,7 @@ async function saveCustomText({title, body, level, generated, generatorSource, t
     generated:!!generated,
     generatorSource:generatorSource || "",
     generatorTopic:topic || "",
+    generatorTranslatedTopic:translatedTopic || "",
     generatorWords:Array.isArray(generatorWords) ? generatorWords.slice(0, 8) : [],
     createdAt:Date.now()
   };
@@ -1558,6 +1593,7 @@ function toggleCustomForm(forceOpen = false){
   let currentGeneratorMode = "topic";
   let lastGeneratedMode = "topic";
   let currentGeneratorWords = [];
+  let currentTranslatedTopic = "";
   document.querySelectorAll("[data-custom-mode]").forEach(button=>{
     button.addEventListener("click", ()=>{
       const generatorMode = button.dataset.customMode === "generator";
@@ -1632,17 +1668,21 @@ function toggleCustomForm(forceOpen = false){
       currentGeneratorSource = generated.source;
       lastGeneratedMode = requestMode;
       currentGeneratorWords = requestedWords;
+      currentTranslatedTopic = generated.translatedTopic || "";
       const basisLabel = requestMode === "words" ? ` · ${requestedWords.length} слов` : "";
+      const translationLabel = currentTranslatedTopic ? " · тема переведена" : "";
       document.getElementById("generatedBadge").textContent =
-        `${generated.source === "ai" ? "ИИ" : "Локально"}${basisLabel} · ${level === "beginner" ? "A1–A2" : level === "advanced" ? "B2" : "B1"}`;
+        `${generated.source === "ai" ? "ИИ" : "Локально"}${basisLabel}${translationLabel} · ${level === "beginner" ? "A1–A2" : level === "advanced" ? "B2" : "B1"}`;
       status.textContent = generated.warning || "";
       document.getElementById("generatedPreview").classList.remove("hidden");
       button.textContent = "Создать ещё";
       document.getElementById("generatedPreview").scrollIntoView({behavior:"smooth", block:"nearest"});
     }catch(e){
-      status.textContent = requestMode === "words"
-        ? "Не удалось создать текст по словам. Попробуйте выбрать меньше слов."
-        : "Не удалось создать текст. Попробуйте другую тему.";
+      status.textContent = e && e.code === "topic-translation"
+        ? "Не удалось перевести тему на английский. Попробуйте сформулировать её короче."
+        : requestMode === "words"
+          ? "ИИ не смог создать текст по словам. Попробуйте выбрать меньше слов."
+          : "ИИ-сервис не смог создать текст. Попробуйте ещё раз.";
       button.textContent = "Сгенерировать";
     } finally {
       button.disabled = false;
@@ -1662,6 +1702,7 @@ function toggleCustomForm(forceOpen = false){
       generated:true,
       generatorSource:currentGeneratorSource,
       topic:lastGeneratedMode === "topic" ? document.getElementById("generatorTopic").value.trim() : "",
+      translatedTopic:currentTranslatedTopic,
       generatorWords:currentGeneratorWords,
       openAfter
     });
@@ -1679,6 +1720,7 @@ function toggleCustomForm(forceOpen = false){
       generated:false,
       generatorSource:"",
       topic:"",
+      translatedTopic:"",
       generatorWords:[],
       openAfter
     });

@@ -1,6 +1,6 @@
 # ИИ-генератор ReadFox через OpenRouter
 
-Cloudflare Worker обращается к бесплатному маршрутизатору моделей `openrouter/free`. Ключ OpenRouter хранится как зашифрованный секрет Worker и не попадает в GitHub Pages или репозиторий. Корневой `wrangler.jsonc` объединяет статический сайт и API `/generate` в одном Worker `readfox`.
+Cloudflare Worker обращается к бесплатному маршрутизатору моделей `openrouter/free`. Ключ OpenRouter хранится как зашифрованный секрет Worker и не попадает в GitHub Pages или репозиторий. Корневой `wrangler.jsonc` объединяет статический сайт, перевод русской темы через `/translate` и генерацию английского текста через `/generate` в одном Worker `readfox`.
 
 ## Развёртывание из GitHub
 
@@ -27,4 +27,4 @@ window.READFOX_CONFIG = Object.freeze({
 
 В `worker/src/index.mjs` разрешены домены `https://gemerpc.github.io` и `https://readfox.gemerpc.workers.dev`. Если адрес сайта изменится, обновите `ALLOWED_ORIGINS` и повторите deploy.
 
-Не записывайте ключ в `js/config.js`, `wrangler.jsonc` или другие файлы проекта. На обычном бесплатном аккаунте OpenRouter доступно до 50 запросов к бесплатным моделям в сутки. Когда лимит или доступность модели исчерпаны, ReadFox автоматически использует локальный резервный генератор.
+Не записывайте ключ в `js/config.js`, `wrangler.jsonc` или другие файлы проекта. При русской теме ReadFox сначала получает английскую формулировку через `/translate`, а затем передаёт её в `/generate`. Если подключённый AI недоступен, интерфейс показывает ошибку и не подменяет результат локальным шаблоном.
