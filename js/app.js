@@ -521,7 +521,9 @@ const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 const REVIEW_INTERVALS = [0, 20 * MINUTE_MS, DAY_MS, 3 * DAY_MS, 7 * DAY_MS, 14 * DAY_MS, 30 * DAY_MS];
 const MAX_CUSTOM_TEXTS = 40;
-let state = { userWords:{}, customTexts:[], readTextIds:[], archivedTextIds:[], settings:{voiceName:null, fontSize:19, theme:"dark"} };
+const BACKUP_VERSION = 2;
+const DEFAULT_SETTINGS = {voiceName:null, fontSize:19, theme:"dark"};
+let state = { userWords:{}, customTexts:[], readTextIds:[], archivedTextIds:[], settings:{...DEFAULT_SETTINGS} };
 let currentText = null;
 let currentFilter = "all";
 let libraryView = "active";
@@ -550,6 +552,16 @@ function normalizeReviewState(word){
   if(!Number.isFinite(word.nextReviewAt)) word.nextReviewAt = Number.isFinite(word.addedAt) ? word.addedAt : Date.now();
   if(!Number.isFinite(word.reviewLapses)) word.reviewLapses = 0;
   if(!Array.isArray(word.contexts)) word.contexts = word.example ? [word.example] : [];
+}
+
+function normalizeSettings(settings){
+  const source = settings && typeof settings === "object" ? settings : {};
+  const fontSize = Number(source.fontSize);
+  return {
+    voiceName:typeof source.voiceName === "string" ? source.voiceName : null,
+    fontSize:Number.isFinite(fontSize) ? Math.max(15, Math.min(30, fontSize)) : DEFAULT_SETTINGS.fontSize,
+    theme:source.theme === "light" ? "light" : "dark"
+  };
 }
 
 function isReviewDue(word, now = Date.now()){
@@ -630,11 +642,9 @@ async function loadState(){
       state.customTexts = parsed.customTexts || [];
       state.readTextIds = parsed.readTextIds || [];
       state.archivedTextIds = Array.isArray(parsed.archivedTextIds) ? parsed.archivedTextIds : [];
-      state.settings = parsed.settings || {voiceName:null, fontSize:19, theme:"dark"};
+      state.settings = normalizeSettings(parsed.settings);
       Object.values(state.userWords).forEach(normalizeReviewState);
       cleanArchivedTextIds();
-      if(typeof state.settings.fontSize !== "number") state.settings.fontSize = 19;
-      if(!state.settings.theme) state.settings.theme = "dark";
     }
   }catch(e){
     // ключа пока нет или хранилище недоступно — используем значения по умолчанию
@@ -725,17 +735,14 @@ async function saveStateNow(){
 }
 
 /* ============================================================
-   ЭКСПОРТ / ИМПОРТ СЛОВАРЯ — надёжная резервная копия,
-   не зависящая от того, работает ли автосохранение в браузере.
+   ПОЛНАЯ РЕЗЕРВНАЯ КОПИЯ — переносит прогресс между доменами.
    ============================================================ */
 function exportData(){
   const payload = {
+    version:BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     app: "ReadFox",
-    userWords: state.userWords,
-    customTexts: state.customTexts,
-    readTextIds: state.readTextIds,
-    archivedTextIds: state.archivedTextIds
+    state
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
   const url = URL.createObjectURL(blob);
@@ -747,33 +754,68 @@ function exportData(){
   a.click();
   a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
-  showToast("Резервная копия скачана");
+  showToast("Весь прогресс сохранён в файл");
 }
+
+function stateFromBackup(data){
+  if(!data || typeof data !== "object") throw new Error("Invalid backup");
+  const source = data.state && typeof data.state === "object" ? data.state : data;
+  const recognized = ["userWords", "customTexts", "readTextIds", "archivedTextIds", "settings"]
+    .some(key=>Object.prototype.hasOwnProperty.call(source, key));
+  if(!recognized) throw new Error("Unknown backup format");
+
+  const userWords = {};
+  if(source.userWords && typeof source.userWords === "object" && !Array.isArray(source.userWords)){
+    Object.entries(source.userWords).forEach(([key, word])=>{
+      if(!key || key === "__proto__" || key === "constructor" || !word || typeof word !== "object") return;
+      userWords[key] = word;
+      normalizeReviewState(userWords[key]);
+    });
+  }
+
+  const customTexts = Array.isArray(source.customTexts)
+    ? source.customTexts.filter(text=>text && typeof text.id === "string" && typeof text.body === "string").slice(0, MAX_CUSTOM_TEXTS)
+    : [];
+  const validIds = new Set(TEXTS.concat(customTexts).map(text=>text.id));
+  const readTextIds = Array.isArray(source.readTextIds)
+    ? [...new Set(source.readTextIds.filter(id=>typeof id === "string" && validIds.has(id)))]
+    : [];
+  const archivedTextIds = Array.isArray(source.archivedTextIds)
+    ? [...new Set(source.archivedTextIds.filter(id=>typeof id === "string" && validIds.has(id)))]
+    : [];
+
+  return {
+    userWords,
+    customTexts,
+    readTextIds,
+    archivedTextIds,
+    settings:normalizeSettings(source.settings)
+  };
+}
+
 async function importDataFromFile(file){
   try{
     const text = await file.text();
     const data = JSON.parse(text);
-    const importedWords = data.userWords || {};
-    const importedTexts = Array.isArray(data.customTexts) ? data.customTexts : [];
-    const importedReadIds = Array.isArray(data.readTextIds) ? data.readTextIds : [];
-    const importedArchive = Array.isArray(data.archivedTextIds) ? data.archivedTextIds : [];
-    const wordCountBefore = Object.keys(state.userWords).length;
-    Object.assign(state.userWords, importedWords);
-    Object.values(state.userWords).forEach(normalizeReviewState);
-    const existingIds = new Set(state.customTexts.map(t=>t.id));
-    importedTexts.forEach(t=>{ if(t && t.id && !existingIds.has(t.id)) state.customTexts.unshift(t); });
-    state.readTextIds = [...new Set([...state.readTextIds, ...importedReadIds])];
-    state.archivedTextIds = [...new Set([...state.archivedTextIds, ...importedArchive])];
-    if(state.customTexts.length > MAX_CUSTOM_TEXTS) state.customTexts.length = MAX_CUSTOM_TEXTS;
-    cleanArchivedTextIds();
-    const wordsAdded = Object.keys(state.userWords).length - wordCountBefore;
+    state = stateFromBackup(data);
+    currentText = null;
+    currentFilter = "all";
+    libraryView = "active";
+    practiceQueue = [];
+    quizQueue = [];
+    practiceIndex = 0;
+    quizIndex = 0;
+    applyTheme();
+    applyFontSize();
     refreshWordVisuals();
     updateStatsUI();
     renderLibrary();
+    renderDictionary();
     const ok = await saveStateNow();
-    showToast(`Импортировано слов: ${wordsAdded}. ${ok ? "Сохранено." : "Но сохранить не удалось — экспортируйте копию снова."}`, !ok);
+    showToast(ok ? "Весь прогресс восстановлен" : "Файл прочитан, но браузер не сохранил прогресс", !ok);
   }catch(e){
-    showToast("Не удалось прочитать файл резервной копии", true);
+    console.error("ReadFox backup import failed", e);
+    showToast("Не удалось восстановить прогресс из этого файла", true);
   }
 }
 
@@ -1228,6 +1270,17 @@ function generatorLevelCode(level){
   return "B1";
 }
 
+function generatorVocabularyEntries(limit = Infinity){
+  return Object.entries(state.userWords)
+    .filter(([key, word])=>key && word && word.status === "learning" && /[a-z]/i.test(key))
+    .map(([key, word])=>{
+      normalizeReviewState(word);
+      return {key, word};
+    })
+    .sort((a, b)=>a.word.nextReviewAt - b.word.nextReviewAt || a.word.addedAt - b.word.addedAt)
+    .slice(0, limit);
+}
+
 function generatorProfileFor(topic){
   const normalized = topic.toLowerCase();
   return TEXT_GENERATOR_PROFILES.find(profile=>
@@ -1332,13 +1385,15 @@ async function generateLocalStudyText(topic, level){
   };
 }
 
-async function generateAiStudyText(topic, level){
+async function generateAiStudyText(topic, level, options = {}){
   const endpoint = aiGeneratorEndpoint();
   if(!endpoint) throw new Error("AI endpoint is not configured");
+  const mode = options.mode === "words" ? "words" : "topic";
+  const words = Array.isArray(options.words) ? options.words.slice(0, 8) : [];
   const response = await fetchWithTimeout(endpoint, 45000, {
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({topic, level:generatorLevelCode(level)})
+    body:JSON.stringify({topic, level:generatorLevelCode(level), mode, words})
   });
   let data = null;
   try{ data = await response.json(); }catch(e){ /* ниже покажем общую ошибку */ }
@@ -1354,21 +1409,26 @@ async function generateAiStudyText(topic, level){
     title,
     body,
     teaser:(body.match(/^[^.!?]+[.!?]/) || [body])[0].trim(),
-    source:"ai"
+    source:"ai",
+    mode,
+    requestedWords:words
   };
 }
 
-async function generateStudyText(topic, level){
+async function generateStudyText(topic, level, options = {}){
+  const mode = options.mode === "words" ? "words" : "topic";
   if(aiGeneratorEndpoint()){
     try{
-      return await generateAiStudyText(topic, level);
+      return await generateAiStudyText(topic, level, options);
     }catch(e){
+      if(mode === "words") throw e;
       const fallback = await generateLocalStudyText(topic, level);
       fallback.source = "local-fallback";
       fallback.warning = "ИИ-сервис сейчас недоступен. Создан локальный черновик.";
       return fallback;
     }
   }
+  if(mode === "words") throw new Error("AI endpoint is not configured");
   const local = await generateLocalStudyText(topic, level);
   local.warning = "ИИ-сервис ещё не подключён. Создан локальный черновик.";
   return local;
@@ -1379,7 +1439,7 @@ function closeCustomForm(){
   wrap.classList.add("hidden");
   wrap.innerHTML = "";
 }
-async function saveCustomText({title, body, level, generated, generatorSource, topic, openAfter}){
+async function saveCustomText({title, body, level, generated, generatorSource, topic, generatorWords, openAfter}){
   const obj = {
     id:"custom-" + Date.now(),
     title:title.trim() || "Мой текст",
@@ -1389,6 +1449,7 @@ async function saveCustomText({title, body, level, generated, generatorSource, t
     generated:!!generated,
     generatorSource:generatorSource || "",
     generatorTopic:topic || "",
+    generatorWords:Array.isArray(generatorWords) ? generatorWords.slice(0, 8) : [],
     createdAt:Date.now()
   };
   state.customTexts.unshift(obj);
@@ -1408,6 +1469,14 @@ function toggleCustomForm(forceOpen = false){
     closeCustomForm();
     return;
   }
+  const vocabularyEntries = generatorVocabularyEntries(40);
+  const vocabularyOptions = vocabularyEntries.length
+    ? vocabularyEntries.map(({key}, index)=>`
+        <label class="generator-word-option" title="${escapeHtml(key)}">
+          <input type="checkbox" data-generator-word value="${escapeHtml(key)}" ${index < 5 ? "checked" : ""}>
+          <span>${escapeHtml(key)}</span>
+        </label>`).join("")
+    : `<div class="generator-word-empty">В словаре пока нет слов со статусом «в изучении».</div>`;
   wrap.classList.remove("hidden");
   wrap.innerHTML = `
     <div class="custom-form">
@@ -1421,10 +1490,14 @@ function toggleCustomForm(forceOpen = false){
       </div>
 
       <div id="generatorTextPanel">
-        <div class="generator-fields">
-          <div>
+        <div class="custom-mode-tabs generator-type-tabs" role="tablist" aria-label="Основа текста">
+          <button class="active" type="button" data-generator-mode="topic" role="tab" aria-selected="true">По теме</button>
+          <button type="button" data-generator-mode="words" role="tab" aria-selected="false">По словам</button>
+        </div>
+        <div class="generator-fields" id="generatorInputFields">
+          <div id="generatorTopicField">
             <label for="generatorTopic">Тема</label>
-            <input id="generatorTopic" type="text" maxlength="80" placeholder="Например: путешествие, работа, технологии">
+            <input id="generatorTopic" type="text" maxlength="120" placeholder="Например: поездка к морю или путешествие во времени">
           </div>
           <div>
             <label for="generatorLevel">Уровень</label>
@@ -1434,6 +1507,10 @@ function toggleCustomForm(forceOpen = false){
               <option value="advanced">B2</option>
             </select>
           </div>
+        </div>
+        <div class="generator-word-panel hidden" id="generatorWordPanel">
+          <label>Слова для текста</label>
+          <div class="generator-word-list">${vocabularyOptions}</div>
         </div>
         <div class="generator-actions">
           <button class="btn" id="generateTextBtn" type="button">Сгенерировать</button>
@@ -1478,6 +1555,9 @@ function toggleCustomForm(forceOpen = false){
     </div>`;
   document.getElementById("customCancel").addEventListener("click", closeCustomForm);
   let currentGeneratorSource = "local";
+  let currentGeneratorMode = "topic";
+  let lastGeneratedMode = "topic";
+  let currentGeneratorWords = [];
   document.querySelectorAll("[data-custom-mode]").forEach(button=>{
     button.addEventListener("click", ()=>{
       const generatorMode = button.dataset.customMode === "generator";
@@ -1492,32 +1572,77 @@ function toggleCustomForm(forceOpen = false){
     });
   });
 
+  document.querySelectorAll("[data-generator-mode]").forEach(button=>{
+    button.addEventListener("click", ()=>{
+      currentGeneratorMode = button.dataset.generatorMode === "words" ? "words" : "topic";
+      const wordsMode = currentGeneratorMode === "words";
+      document.getElementById("generatorTopicField").classList.toggle("hidden", wordsMode);
+      document.getElementById("generatorWordPanel").classList.toggle("hidden", !wordsMode);
+      document.getElementById("generatorInputFields").classList.toggle("words-mode", wordsMode);
+      document.querySelectorAll("[data-generator-mode]").forEach(tab=>{
+        const active = tab === button;
+        tab.classList.toggle("active", active);
+        tab.setAttribute("aria-selected", String(active));
+      });
+      if(!wordsMode) document.getElementById("generatorTopic").focus();
+    });
+  });
+  document.querySelectorAll("[data-generator-word]").forEach(input=>{
+    input.addEventListener("change", ()=>{
+      const checked = document.querySelectorAll("[data-generator-word]:checked");
+      if(checked.length > 8){
+        input.checked = false;
+        document.getElementById("generatorStatus").textContent = "Можно выбрать не больше 8 слов.";
+      } else {
+        document.getElementById("generatorStatus").textContent = "";
+      }
+    });
+  });
+
   document.getElementById("generateTextBtn").addEventListener("click", async ()=>{
     const topicInput = document.getElementById("generatorTopic");
     const topic = topicInput.value.trim();
-    if(!topic){
+    const selectedWords = [...document.querySelectorAll("[data-generator-word]:checked")]
+      .map(input=>input.value);
+    if(currentGeneratorMode === "topic" && !topic){
       topicInput.focus();
+      return;
+    }
+    if(currentGeneratorMode === "words" && selectedWords.length < 2){
+      document.getElementById("generatorStatus").textContent = "Выберите хотя бы 2 слова.";
       return;
     }
     const level = document.getElementById("generatorLevel").value;
     const button = document.getElementById("generateTextBtn");
     const status = document.getElementById("generatorStatus");
+    const requestedWords = currentGeneratorMode === "words"
+      ? selectedWords
+      : generatorVocabularyEntries(8).map(entry=>entry.key);
+    const requestMode = currentGeneratorMode;
     button.disabled = true;
     button.textContent = "Создаём…";
     status.textContent = "";
     try{
-      const generated = await generateStudyText(topic, level);
+      const generated = await generateStudyText(requestMode === "topic" ? topic : "", level, {
+        mode:requestMode,
+        words:requestedWords
+      });
       document.getElementById("generatedTitle").value = generated.title;
       document.getElementById("generatedBody").value = generated.body;
       currentGeneratorSource = generated.source;
+      lastGeneratedMode = requestMode;
+      currentGeneratorWords = requestedWords;
+      const basisLabel = requestMode === "words" ? ` · ${requestedWords.length} слов` : "";
       document.getElementById("generatedBadge").textContent =
-        `${generated.source === "ai" ? "ИИ" : "Локально"} · ${level === "beginner" ? "A1–A2" : level === "advanced" ? "B2" : "B1"}`;
+        `${generated.source === "ai" ? "ИИ" : "Локально"}${basisLabel} · ${level === "beginner" ? "A1–A2" : level === "advanced" ? "B2" : "B1"}`;
       status.textContent = generated.warning || "";
       document.getElementById("generatedPreview").classList.remove("hidden");
       button.textContent = "Создать ещё";
       document.getElementById("generatedPreview").scrollIntoView({behavior:"smooth", block:"nearest"});
     }catch(e){
-      status.textContent = "Не удалось создать текст. Попробуйте другую тему.";
+      status.textContent = requestMode === "words"
+        ? "Не удалось создать текст по словам. Попробуйте выбрать меньше слов."
+        : "Не удалось создать текст. Попробуйте другую тему.";
       button.textContent = "Сгенерировать";
     } finally {
       button.disabled = false;
@@ -1536,7 +1661,8 @@ function toggleCustomForm(forceOpen = false){
       level:document.getElementById("generatorLevel").value,
       generated:true,
       generatorSource:currentGeneratorSource,
-      topic:document.getElementById("generatorTopic").value.trim(),
+      topic:lastGeneratedMode === "topic" ? document.getElementById("generatorTopic").value.trim() : "",
+      generatorWords:currentGeneratorWords,
       openAfter
     });
   }
@@ -1553,6 +1679,7 @@ function toggleCustomForm(forceOpen = false){
       generated:false,
       generatorSource:"",
       topic:"",
+      generatorWords:[],
       openAfter
     });
   }

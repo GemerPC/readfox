@@ -282,7 +282,23 @@ main{max-width:1000px;margin:0 auto;padding:36px 24px 100px;}
   flex:1;min-height:36px;border:0;border-radius:6px;background:transparent;color:var(--ink-muted);
 }
 .custom-mode-tabs button.active{background:var(--surface);color:var(--ink);box-shadow:var(--shadow);}
+.generator-type-tabs{width:min(300px,100%);margin-bottom:14px;}
 .generator-fields{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:12px;}
+.generator-fields.words-mode{grid-template-columns:180px;}
+.generator-word-panel{margin-bottom:14px;}
+.generator-word-list{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;
+  max-height:230px;overflow:auto;padding:2px 4px 2px 0;
+}
+.custom-form .generator-word-option{
+  display:flex;align-items:center;gap:9px;min-width:0;margin:0;padding:9px 10px;
+  border:1px solid var(--line);border-radius:6px;background:var(--surface-2);
+  color:var(--ink);font-size:calc(12px * var(--font-scale));cursor:pointer;
+}
+.custom-form .generator-word-option:hover{border-color:var(--ink-muted);}
+.custom-form .generator-word-option input{width:16px;height:16px;flex:none;margin:0;accent-color:var(--amber);}
+.generator-word-option span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.generator-word-empty{padding:14px;border:1px dashed var(--line);color:var(--ink-muted);font-size:12px;}
 .custom-form label{font-size:12px;color:var(--ink-soft);display:block;margin-bottom:5px;}
 .custom-form input,.custom-form textarea,.custom-form select{
   width:100%;font-family:inherit;font-size:13px;padding:9px 12px;
@@ -333,6 +349,10 @@ main{max-width:1000px;margin:0 auto;padding:36px 24px 100px;}
 }
 
 @media(max-width:640px){.reader-body{padding:20px 16px;}}
+@media(max-width:480px){
+  .generator-fields.words-mode{grid-template-columns:1fr;}
+  .generator-word-list{grid-template-columns:1fr;max-height:280px;}
+}
 @media(min-width:641px) and (max-width:900px){.reader-body{padding:28px 32px;}}
 
 .reader-body{
@@ -1302,8 +1322,8 @@ footer{
   #toastLayer{width:calc(100vw - 20px);bottom:calc(12px + env(safe-area-inset-bottom));}
   .toast{max-width:100%;}
 
-  .dict-tools{display:grid;grid-template-columns:1fr 1fr;}
-  .dict-tools .btn{min-width:0;width:100%;padding:9px 8px;font-size:11px;justify-content:center;}
+  .dict-tools{display:grid;grid-template-columns:1fr;}
+  .dict-tools .btn{min-width:0;width:100%;min-height:44px;padding:10px 12px;font-size:13px;justify-content:center;}
   .dict-tabs{overflow-x:auto;padding-bottom:3px;scrollbar-width:none;}
   .dict-tabs::-webkit-scrollbar{display:none;}
   .dict-tabs button{min-height:40px;flex:none;}
