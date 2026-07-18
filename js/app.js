@@ -1218,6 +1218,16 @@ const TEXT_GENERATOR_PROFILES = [
 
 const generatorTopicCache = {};
 
+function aiGeneratorEndpoint(){
+  const configured = window.READFOX_CONFIG && window.READFOX_CONFIG.aiGeneratorEndpoint;
+  return typeof configured === "string" ? configured.trim() : "";
+}
+function generatorLevelCode(level){
+  if(level === "beginner") return "A1-A2";
+  if(level === "advanced") return "B2";
+  return "B1";
+}
+
 function generatorProfileFor(topic){
   const normalized = topic.toLowerCase();
   return TEXT_GENERATOR_PROFILES.find(profile=>
@@ -1294,7 +1304,7 @@ On a normal day, I ${profile.action}. However, ${profile.challenge.charAt(0).toL
 
 ${profile.outcome}. ${profile.social}. The routine is not perfect, but it becomes more useful when I review what worked and change what did not. ${closing}.`;
 }
-async function generateStudyText(topic, level){
+async function generateLocalStudyText(topic, level){
   let profile = generatorProfileFor(topic);
   const translatedTopic = profile ? null : await translateGeneratorTopic(topic);
   if(!profile && translatedTopic) profile = generatorProfileFor(translatedTopic);
@@ -1317,8 +1327,51 @@ async function generateStudyText(topic, level){
   return {
     title:profile.title,
     body,
-    teaser:(body.match(/^[^.!?]+[.!?]/) || [body])[0].trim()
+    teaser:(body.match(/^[^.!?]+[.!?]/) || [body])[0].trim(),
+    source:"local"
   };
+}
+
+async function generateAiStudyText(topic, level){
+  const endpoint = aiGeneratorEndpoint();
+  if(!endpoint) throw new Error("AI endpoint is not configured");
+  const response = await fetchWithTimeout(endpoint, 45000, {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({topic, level:generatorLevelCode(level)})
+  });
+  let data = null;
+  try{ data = await response.json(); }catch(e){ /* ниже покажем общую ошибку */ }
+  if(!response.ok){
+    throw new Error(data && data.error ? data.error : `AI request failed: ${response.status}`);
+  }
+  const title = data && typeof data.title === "string" ? data.title.trim() : "";
+  const body = data && typeof data.body === "string" ? data.body.trim() : "";
+  if(!title || wordCount(body) < 80){
+    throw new Error("AI returned an incomplete text");
+  }
+  return {
+    title,
+    body,
+    teaser:(body.match(/^[^.!?]+[.!?]/) || [body])[0].trim(),
+    source:"ai"
+  };
+}
+
+async function generateStudyText(topic, level){
+  if(aiGeneratorEndpoint()){
+    try{
+      return await generateAiStudyText(topic, level);
+    }catch(e){
+      const fallback = await generateLocalStudyText(topic, level);
+      fallback.source = "local-fallback";
+      fallback.warning = "ИИ-сервис сейчас недоступен. Создан локальный черновик.";
+      return fallback;
+    }
+  }
+  const local = await generateLocalStudyText(topic, level);
+  local.warning = "ИИ-сервис ещё не подключён. Создан локальный черновик.";
+  return local;
 }
 
 function closeCustomForm(){
@@ -1326,7 +1379,7 @@ function closeCustomForm(){
   wrap.classList.add("hidden");
   wrap.innerHTML = "";
 }
-async function saveCustomText({title, body, level, generated, topic, openAfter}){
+async function saveCustomText({title, body, level, generated, generatorSource, topic, openAfter}){
   const obj = {
     id:"custom-" + Date.now(),
     title:title.trim() || "Мой текст",
@@ -1334,6 +1387,7 @@ async function saveCustomText({title, body, level, generated, topic, openAfter})
     teaser:(body.match(/^[^.!?]+[.!?]/) || ["Текст, который вы добавили сами."])[0].trim(),
     body:body.trim(),
     generated:!!generated,
+    generatorSource:generatorSource || "",
     generatorTopic:topic || "",
     createdAt:Date.now()
   };
@@ -1423,6 +1477,7 @@ function toggleCustomForm(forceOpen = false){
       </div>
     </div>`;
   document.getElementById("customCancel").addEventListener("click", closeCustomForm);
+  let currentGeneratorSource = "local";
   document.querySelectorAll("[data-custom-mode]").forEach(button=>{
     button.addEventListener("click", ()=>{
       const generatorMode = button.dataset.customMode === "generator";
@@ -1454,10 +1509,12 @@ function toggleCustomForm(forceOpen = false){
       const generated = await generateStudyText(topic, level);
       document.getElementById("generatedTitle").value = generated.title;
       document.getElementById("generatedBody").value = generated.body;
+      currentGeneratorSource = generated.source;
       document.getElementById("generatedBadge").textContent =
-        `Черновик · ${level === "beginner" ? "A1–A2" : level === "advanced" ? "B2" : "B1"}`;
+        `${generated.source === "ai" ? "ИИ" : "Локально"} · ${level === "beginner" ? "A1–A2" : level === "advanced" ? "B2" : "B1"}`;
+      status.textContent = generated.warning || "";
       document.getElementById("generatedPreview").classList.remove("hidden");
-      button.textContent = "Другой вариант";
+      button.textContent = "Создать ещё";
       document.getElementById("generatedPreview").scrollIntoView({behavior:"smooth", block:"nearest"});
     }catch(e){
       status.textContent = "Не удалось создать текст. Попробуйте другую тему.";
@@ -1478,6 +1535,7 @@ function toggleCustomForm(forceOpen = false){
       body,
       level:document.getElementById("generatorLevel").value,
       generated:true,
+      generatorSource:currentGeneratorSource,
       topic:document.getElementById("generatorTopic").value.trim(),
       openAfter
     });
@@ -1493,6 +1551,7 @@ function toggleCustomForm(forceOpen = false){
       body,
       level:document.getElementById("manualLevel").value,
       generated:false,
+      generatorSource:"",
       topic:"",
       openAfter
     });
@@ -1976,11 +2035,11 @@ const TRANSCRIPTION_FALLBACKS = {
   constantine: "/ˈkɒnstəntaɪn/"
 };
 
-async function fetchWithTimeout(url, ms){
+async function fetchWithTimeout(url, ms, options = {}){
   const controller = new AbortController();
   const timer = setTimeout(()=>controller.abort(), ms);
   try{
-    return await fetch(url, {signal: controller.signal});
+    return await fetch(url, {...options, signal: controller.signal});
   } finally {
     clearTimeout(timer);
   }
