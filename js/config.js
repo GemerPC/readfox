@@ -2,5 +2,5 @@
 // Пример: https://readfox-text-generator.example.workers.dev/generate
 window.READFOX_CONFIG = Object.freeze({
   aiGeneratorEndpoint: "https://readfox.gemerpc.workers.dev/generate",
-  build:"2026.07.18.3"
+  build:"2026.07.22.1"
 });

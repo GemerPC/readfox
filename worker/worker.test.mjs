@@ -7,6 +7,10 @@ const modelReplies = [
     choices:[{finish_reason:"stop", message:{content:"ENGLISH_TOPIC: quiet weekends at home"}}]
   },
   {
+    model:"test/context-translator",
+    choices:[{finish_reason:"stop", message:{content:"RUSSIAN_MEANING: берег"}}]
+  },
+  {
     model:"test/free",
     choices:[{finish_reason:"stop", message:{content:"TITLE: A Quiet Sunday\nTEXT:\nMia stayed home on Sunday.\n\nShe made tea and read a book."}}]
   },
@@ -54,6 +58,14 @@ async function translate(topic){
   }), {OPENROUTER_API_KEY:"test-key"});
 }
 
+async function translateWord(word, sentence){
+  return worker.fetch(new Request("https://readfox.gemerpc.workers.dev/translate-word", {
+    method:"POST",
+    headers:{"Content-Type":"application/json", "Origin":"https://gemerpc.github.io"},
+    body:JSON.stringify({word, sentence})
+  }), {OPENROUTER_API_KEY:"test-key"});
+}
+
 const translationResponse = await translate("тихие выходные дома");
 assert.equal(translationResponse.status, 200);
 const translation = await translationResponse.json();
@@ -61,11 +73,18 @@ assert.equal(translation.translatedTopic, "quiet weekends at home");
 assert.equal(openRouterRequests[0].max_tokens, 80);
 assert.match(openRouterRequests[0].messages[1].content, /тихие выходные дома/);
 
+const contextualResponse = await translateWord("bank", "We sat on the bank of the river.");
+assert.equal(contextualResponse.status, 200);
+const contextual = await contextualResponse.json();
+assert.equal(contextual.translation, "берег");
+assert.match(openRouterRequests[1].messages[1].content, /bank/);
+assert.match(openRouterRequests[1].messages[1].content, /river/);
+
 const plainResponse = await generate({topic:translation.translatedTopic, originalTopic:"тихие выходные дома", level:"B1", mode:"topic", words:["quiet", "background"]});
 assert.equal(plainResponse.status, 200);
 assert.equal((await plainResponse.json()).title, "A Quiet Sunday");
-assert.match(openRouterRequests[1].messages[1].content, /quiet weekends at home/);
-assert.doesNotMatch(openRouterRequests[1].messages[1].content, /тихие выходные дома/);
+assert.match(openRouterRequests[2].messages[1].content, /quiet weekends at home/);
+assert.doesNotMatch(openRouterRequests[2].messages[1].content, /тихие выходные дома/);
 
 const jsonResponse = await generate();
 assert.equal(jsonResponse.status, 200);
@@ -82,7 +101,7 @@ assert.equal(wordsResponse.status, 200);
 const wordsResult = await wordsResponse.json();
 assert.equal(wordsResult.mode, "words");
 assert.deepEqual(wordsResult.requestedWords, ["background", "recognize", "narrow"]);
-assert.match(openRouterRequests[4].messages[1].content, /Use every target item naturally/);
+assert.match(openRouterRequests[5].messages[1].content, /Use every target item naturally/);
 
 const assetResponse = await worker.fetch(
   new Request("https://readfox.gemerpc.workers.dev/"),

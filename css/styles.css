@@ -406,6 +406,7 @@ main{max-width:1000px;margin:0 auto;padding:36px 24px 100px;}
 .tooltip .tt-ipa.loading{font-family:inherit;font-style:normal;font-size:11px;color:var(--ink-muted);}
 .tooltip .tt-source{font-size:11px;color:var(--ink-muted);margin:-6px 0 10px;}
 .tooltip .tt-translation{font-family:'Lora',serif;font-size:calc(16px * var(--font-scale));color:var(--green);font-weight:600;margin-bottom:10px;}
+.tooltip .tt-translation.loading{font-family:inherit;font-size:12px;color:var(--ink-muted);font-weight:500;}
 .tooltip .tt-freq{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;color:var(--ink-muted);}
 .tooltip .freq-bars{display:inline-flex;align-items:flex-end;gap:2px;height:13px;flex:none;}
 .tooltip .fbar{width:3px;background:var(--surface-3);border-radius:1px;}

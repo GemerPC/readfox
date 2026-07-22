@@ -1,6 +1,6 @@
 # ИИ-генератор ReadFox через OpenRouter
 
-Cloudflare Worker обращается к бесплатному маршрутизатору моделей `openrouter/free`. Ключ OpenRouter хранится как зашифрованный секрет Worker и не попадает в GitHub Pages или репозиторий. Корневой `wrangler.jsonc` объединяет статический сайт, перевод русской темы через `/translate` и генерацию английского текста через `/generate` в одном Worker `readfox`.
+Cloudflare Worker обращается к бесплатному маршрутизатору моделей `openrouter/free`. Ключ OpenRouter хранится как зашифрованный секрет Worker и не попадает в GitHub Pages или репозиторий. Корневой `wrangler.jsonc` объединяет статический сайт, перевод русской темы через `/translate`, контекстный перевод слов через `/translate-word` и генерацию английского текста через `/generate` в одном Worker `readfox`.
 
 ## Развёртывание из GitHub
 

@@ -552,6 +552,9 @@ function normalizeReviewState(word){
   if(!Number.isFinite(word.nextReviewAt)) word.nextReviewAt = Number.isFinite(word.addedAt) ? word.addedAt : Date.now();
   if(!Number.isFinite(word.reviewLapses)) word.reviewLapses = 0;
   if(!Array.isArray(word.contexts)) word.contexts = word.example ? [word.example] : [];
+  if(!word.contextTranslations || typeof word.contextTranslations !== "object" || Array.isArray(word.contextTranslations)){
+    word.contextTranslations = {};
+  }
 }
 
 function normalizeSettings(settings){
@@ -1810,8 +1813,12 @@ function refreshWordVisuals(){
   const dictView = document.querySelector('.view[data-view="dictionary"]');
   if(dictView && !dictView.classList.contains("hidden")) renderDictionary();
 }
-function addWord(key, translation, status, example){
+function addWord(key, translation, status, example, contextAware = false){
   const prev = state.userWords[key];
+  const contextTranslations = prev && prev.contextTranslations && typeof prev.contextTranslations === "object"
+    ? {...prev.contextTranslations}
+    : {};
+  if(contextAware && example) contextTranslations[example] = translation;
   state.userWords[key] = {
     ...(prev || initialReviewState(status)),
     translation,
@@ -1819,6 +1826,7 @@ function addWord(key, translation, status, example){
     addedAt: prev ? prev.addedAt : Date.now(),
     example: (prev && prev.example) ? prev.example : (example || ""),
     contexts:mergeContexts(prev, example),
+    contextTranslations,
     type: "word",
     source: BASE_DICT.hasOwnProperty(key) ? "built-in" : "custom"
   };
@@ -2199,6 +2207,7 @@ function highlightInSentence(sentence, token){
    в памяти на время сессии, чтобы не запрашивать одно и то же слово дважды.
    ============================================================ */
 const apiTranslationCache = {};
+const contextualTranslationCache = {};
 const transcriptionCache = {};
 const TRANSCRIPTION_FALLBACKS = {
   constantine: "/ˈkɒnstəntaɪn/"
@@ -2233,6 +2242,38 @@ async function fetchApiTranslation(text){
     }
   }catch(e){ /* сеть/CORS/таймаут — просто остаёмся без перевода из API */ }
   apiTranslationCache[k] = result;
+  return result;
+}
+
+function aiContextTranslationEndpoint(){
+  const endpoint = aiGeneratorEndpoint();
+  return /\/generate\/?$/i.test(endpoint) ? endpoint.replace(/\/generate\/?$/i, "/translate-word") : "";
+}
+
+async function fetchContextualWordTranslation(word, sentence){
+  const cacheKey = word.toLowerCase() + "\n" + sentence.toLowerCase();
+  if(Object.prototype.hasOwnProperty.call(contextualTranslationCache, cacheKey)){
+    return contextualTranslationCache[cacheKey];
+  }
+  const endpoint = aiContextTranslationEndpoint();
+  if(!endpoint){
+    contextualTranslationCache[cacheKey] = null;
+    return null;
+  }
+  let result = null;
+  try{
+    const response = await fetchWithTimeout(endpoint, 30000, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({word, sentence})
+    });
+    if(response.ok){
+      const data = await response.json();
+      const translated = data && typeof data.translation === "string" ? data.translation.trim() : "";
+      if(translated && /[а-яё]/i.test(translated)) result = translated;
+    }
+  }catch(e){ /* словарный перевод останется резервным */ }
+  contextualTranslationCache[cacheKey] = result;
   return result;
 }
 
@@ -2274,6 +2315,13 @@ function showTooltip(el, token, forcedSentence){
   const layer = document.getElementById("tooltipLayer");
   const sIdx = el.dataset ? el.dataset.sidx : undefined;
   const sentence = forcedSentence || ((sIdx !== undefined && readerSentences[sIdx]) ? readerSentences[sIdx] : null);
+  const savedWord = state.userWords[key];
+  const savedContextualTranslation = sentence && savedWord && savedWord.contextTranslations
+    ? savedWord.contextTranslations[sentence] || null
+    : null;
+  if(savedContextualTranslation){
+    info = info ? {...info, translation:savedContextualTranslation} : {key, translation:savedContextualTranslation};
+  }
 
   // Состояние, которое со временем дополняется асинхронными ответами API
   const view = {
@@ -2283,6 +2331,8 @@ function showTooltip(el, token, forcedSentence){
     ipa: null,
     ipaStatus: "loading",
     audioUrl: (transcriptionCache[key.toLowerCase()] && transcriptionCache[key.toLowerCase()].audio) || null,
+    contextualWordTranslation: savedContextualTranslation,
+    contextTranslationStatus: sentence ? (savedContextualTranslation ? "done" : "loading") : "skip",
     sentenceTranslation: null,   // перевод контекстного предложения, добавляется асинхронно
     sentenceTranslationStatus: sentence ? "loading" : "skip"
   };
@@ -2292,6 +2342,7 @@ function showTooltip(el, token, forcedSentence){
     if(reqId !== tooltipRequestId) return; // открыта уже другая подсказка
     const curKey = view.info ? view.info.key : key;
     const existing = state.userWords[curKey];
+    const awaitingContextTranslation = !!sentence && view.contextTranslationStatus === "loading";
 
     let inner = `<button class="tt-close" id="ttClose" aria-label="Закрыть">✕</button>`;
     inner += `<div class="tt-word-row"><span class="tt-word">${escapeHtml(token)}</span>
@@ -2306,8 +2357,14 @@ function showTooltip(el, token, forcedSentence){
     }
 
     if(view.info){
-      inner += `<div class="tt-translation">${escapeHtml(view.info.translation)}</div>`;
-      if(view.fromApi){
+      if(awaitingContextTranslation){
+        inner += `<div class="tt-translation loading">уточняем значение в контексте…</div>`;
+      } else {
+        inner += `<div class="tt-translation">${escapeHtml(view.info.translation)}</div>`;
+      }
+      if(view.contextualWordTranslation){
+        inner += `<div class="tt-source">перевод по контексту</div>`;
+      } else if(view.fromApi){
         inner += `<div class="tt-source">🌐 перевод из онлайн-словаря</div>`;
       }
       const freq = frequencyInfo(view.info.key);
@@ -2337,7 +2394,7 @@ function showTooltip(el, token, forcedSentence){
       }
     }
 
-    if(view.info){
+    if(view.info && !awaitingContextTranslation){
       if(!existing){
         inner += `<div class="tt-actions">
           <button class="primary" id="ttAddLearning">+ В изучение</button>
@@ -2356,7 +2413,7 @@ function showTooltip(el, token, forcedSentence){
           <button class="danger" id="ttRemove">Убрать из словаря</button>
         </div>`;
       }
-    } else if(view.apiStatus !== "loading"){
+    } else if(view.apiStatus !== "loading" && !awaitingContextTranslation){
       inner += `<div class="tt-hint">Перевод не найден. Добавьте свой:</div>
         <input class="tt-input" id="ttInput" type="text" placeholder="Например: красивый">
         <div class="tt-actions">
@@ -2384,13 +2441,13 @@ function showTooltip(el, token, forcedSentence){
     if(speakContext) speakContext.addEventListener("click", ()=>speak(sentence));
     const addLearning = document.getElementById("ttAddLearning");
     if(addLearning) addLearning.addEventListener("click", ()=>{
-      addWord(curKey, view.info.translation, "learning", sentence);
+      addWord(curKey, view.info.translation, "learning", sentence, !!view.contextualWordTranslation);
       showToast("Добавлено в «В изучении» ✓");
       paint();
     });
     const addKnown = document.getElementById("ttAddKnown");
     if(addKnown) addKnown.addEventListener("click", ()=>{
-      addWord(curKey, view.info.translation, "known", sentence);
+      addWord(curKey, view.info.translation, "known", sentence, !!view.contextualWordTranslation);
       showToast("Добавлено в «Изучено» ✓");
       paint();
     });
@@ -2443,9 +2500,33 @@ function showTooltip(el, token, forcedSentence){
   if(!info){
     fetchApiTranslation(token).then(translated=>{
       view.apiStatus = translated ? "done" : "failed";
-      if(translated){
+      if(translated && !view.contextualWordTranslation){
         view.info = {key, translation: translated};
         view.fromApi = true;
+      }
+      paint();
+    });
+  }
+
+  // Основной перевод слова берём с учётом предложения. Словарное значение
+  // остаётся резервным, если AI недоступен.
+  if(sentence && !savedContextualTranslation){
+    fetchContextualWordTranslation(token, sentence).then(translated=>{
+      view.contextTranslationStatus = translated ? "done" : "failed";
+      if(translated){
+        const contextKey = view.info ? view.info.key : key;
+        view.info = {...(view.info || {}), key:contextKey, translation:translated};
+        view.contextualWordTranslation = translated;
+        view.fromApi = false;
+        view.apiStatus = "done";
+
+        const storedWord = state.userWords[contextKey];
+        if(storedWord){
+          normalizeReviewState(storedWord);
+          storedWord.contextTranslations[sentence] = translated;
+          if(storedWord.example === sentence) storedWord.translation = translated;
+          saveState();
+        }
       }
       paint();
     });
