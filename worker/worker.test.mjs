@@ -33,6 +33,10 @@ const modelReplies = [
   {
     model:"test/context-translator",
     choices:[{finish_reason:"stop", message:{content:"WORD_TRANSLATION: берег\nSENTENCE_TRANSLATION: Мы сидели на берегу реки."}}]
+  },
+  {
+    model:"test/context-translator",
+    choices:[{finish_reason:"stop", message:{content:"WORD_TRANSLATION: по-настоящему\nMATCHED_FRAGMENT: по-настоящему\nSENTENCE_TRANSLATION: Он хотел по-настоящему жить."}}]
   }
 ];
 
@@ -41,8 +45,8 @@ globalThis.fetch = async (url, init) => {
   assert.equal(url, "https://openrouter.ai/api/v1/chat/completions");
   const request = JSON.parse(init.body);
   openRouterRequests.push(request);
-  assert.equal(request.max_tokens === 80 || request.max_tokens === 260 || request.max_tokens === 1200, true);
-  assert.deepEqual(request.reasoning, {effort:"none", exclude:true});
+  assert.equal(request.max_tokens === 160 || request.max_tokens === 500 || request.max_tokens === 1200, true);
+  assert.equal("reasoning" in request, false);
   assert.equal("response_format" in request, false);
   return new Response(JSON.stringify(modelReplies.shift()), {
     status:200,
@@ -78,7 +82,8 @@ const translationResponse = await translate("тихие выходные дом�
 assert.equal(translationResponse.status, 200);
 const translation = await translationResponse.json();
 assert.equal(translation.translatedTopic, "quiet weekends at home");
-assert.equal(openRouterRequests[0].max_tokens, 80);
+assert.equal(openRouterRequests[0].max_tokens, 160);
+assert.match(openRouterRequests[0].messages[0].content, /\/no_think/);
 assert.match(openRouterRequests[0].messages[1].content, /тихие выходные дома/);
 
 const contextualResponse = await translateWord("bank", "We sat on the bank of the river.");
@@ -89,6 +94,7 @@ assert.equal(contextual.matchedFragment, "берегу");
 assert.equal(contextual.sentenceTranslation, "Мы сидели на берегу реки.");
 assert.match(openRouterRequests[1].messages[1].content, /bank/);
 assert.match(openRouterRequests[1].messages[1].content, /river/);
+assert.match(openRouterRequests[1].messages[0].content, /\/no_think/);
 
 const plainResponse = await generate({topic:translation.translatedTopic, originalTopic:"тихие выходные дома", level:"B1", mode:"topic", words:["quiet", "background"]});
 assert.equal(plainResponse.status, 200);
@@ -119,6 +125,13 @@ const retriedContext = await inconsistentContextResponse.json();
 assert.equal(retriedContext.translation, "берег");
 assert.equal(retriedContext.matchedFragment, "берег");
 assert.match(openRouterRequests[7].messages[1].content, /This is a retry/);
+
+const trulyResponse = await translateWord("truly", "He wanted to truly live.");
+assert.equal(trulyResponse.status, 200);
+const truly = await trulyResponse.json();
+assert.equal(truly.translation, "по-настоящему");
+assert.equal(truly.sentenceTranslation, "Он хотел по-настоящему жить.");
+assert.match(openRouterRequests[8].messages[0].content, /\/no_think/);
 
 const assetResponse = await worker.fetch(
   new Request("https://readfox.gemerpc.workers.dev/"),

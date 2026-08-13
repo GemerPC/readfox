@@ -1,5 +1,6 @@
 const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "openrouter/free";
+const WORKER_BUILD = "2026.08.13.4";
 const ALLOWED_ORIGINS = new Set([
   "https://gemerpc.github.io",
   "https://readfox.gemerpc.workers.dev"
@@ -107,9 +108,9 @@ function parseContextualMeaning(raw){
     }catch(e){ /* use the plain-text parser below */ }
   }
   if(!translation){
-    const translationMatch = cleaned.match(/(?:^|\n)\s*(?:WORD_)?TRANSLATION\s*:\s*(.+?)\s*(?:\n|$)/i);
-    const fragmentMatch = cleaned.match(/(?:^|\n)\s*(?:MATCHED_)?FRAGMENT\s*:\s*(.+?)\s*(?:\n|$)/i);
-    const sentenceMatch = cleaned.match(/(?:^|\n)\s*(?:SENTENCE|CONTEXT)_TRANSLATION\s*:\s*(.+?)\s*(?:\n|$)/i);
+    const translationMatch = cleaned.match(/(?:^|\n)\s*(?:(?:WORD_)?TRANSLATION|ПЕРЕВОД\s+СЛОВА)\s*:\s*(.+?)\s*(?:\n|$)/i);
+    const fragmentMatch = cleaned.match(/(?:^|\n)\s*(?:(?:MATCHED_)?FRAGMENT|ФРАГМЕНТ)\s*:\s*(.+?)\s*(?:\n|$)/i);
+    const sentenceMatch = cleaned.match(/(?:^|\n)\s*(?:(?:SENTENCE|CONTEXT)_TRANSLATION|ПЕРЕВОД\s+ПРЕДЛОЖЕНИЯ)\s*:\s*(.+?)\s*(?:\n|$)/i);
     translation = translationMatch ? translationMatch[1].trim() : "";
     matchedFragment = fragmentMatch ? fragmentMatch[1].trim() : "";
     sentenceTranslation = sentenceMatch ? sentenceMatch[1].trim() : "";
@@ -177,6 +178,7 @@ async function callOpenRouter(env, requestBody){
     console.error("OpenRouter request failed", response.status, result);
     const error = new Error("OpenRouter request failed");
     error.status = response.status;
+    error.code = "openrouter-request";
     throw error;
   }
   return result;
@@ -264,7 +266,8 @@ export default {
           ? "ReadFox topic translator"
           : isWordTranslationRoute ? "ReadFox contextual word translator" : "ReadFox text generator",
         provider:"OpenRouter",
-        model:MODEL
+        model:MODEL,
+        build:WORKER_BUILD
       }, 200, origin);
     }
     if(request.method === "OPTIONS"){
@@ -303,11 +306,10 @@ export default {
       try{
         const result = await callOpenRouter(env, {
           messages:[
-            {role:"system", content:"You are a precise Russian-to-English translator. Return only the requested English topic line."},
+            {role:"system", content:"/no_think\nYou are a precise Russian-to-English translator. Return only the requested English topic line."},
             {role:"user", content:translationPrompt(originalTopic)}
           ],
-          reasoning:{effort:"none", exclude:true},
-          max_tokens:80,
+          max_tokens:160,
           temperature:0.1
         });
         return json({
@@ -319,7 +321,7 @@ export default {
       }catch(error){
         console.error("ReadFox topic translation failed", error);
         const status = error.status === 429 ? 429 : 502;
-        return json({error:status === 429 ? "Free model limit reached" : "The AI service could not translate the topic"}, status, origin);
+        return json({error:status === 429 ? "Free model limit reached" : "The AI service could not translate the topic", code:error.code || "invalid-ai-response", upstreamStatus:error.status || null, build:WORKER_BUILD}, status, origin);
       }
     }
 
@@ -339,16 +341,15 @@ export default {
         for(let attempt = 0; attempt < 2; attempt++){
           result = await callOpenRouter(env, {
             messages:[
-              {role:"system", content:"You are a precise English-to-Russian dictionary editor. Return only the requested translation fields, without commentary."},
+              {role:"system", content:"/no_think\nYou are a precise English-to-Russian dictionary editor. Return only the requested translation fields, without commentary or reasoning."},
               {
                 role:"user",
                 content:contextualMeaningPrompt(word, sentence) + (attempt
-                  ? "\nThis is a retry. Keep both values short and use the two labels exactly as written."
+                  ? "\nThis is a retry. Keep all three values short and use the three labels exactly as written."
                   : "")
               }
             ],
-            reasoning:{effort:"none", exclude:true},
-            max_tokens:260,
+            max_tokens:500,
             temperature:0
           });
           try{
@@ -377,7 +378,7 @@ export default {
       }catch(error){
         console.error("ReadFox contextual translation failed", error);
         const status = error.status === 429 ? 429 : 502;
-        return json({error:status === 429 ? "Free model limit reached" : "The AI service could not translate the word in context"}, status, origin);
+        return json({error:status === 429 ? "Free model limit reached" : "The AI service could not translate the word in context", code:error.code || "invalid-ai-response", upstreamStatus:error.status || null, build:WORKER_BUILD}, status, origin);
       }
     }
 
@@ -402,11 +403,10 @@ export default {
         messages:[
           {
             role:"system",
-            content:"You are an experienced English teacher and fiction editor. Always write the generated reading text in English and follow the requested TITLE/TEXT format exactly."
+            content:"/no_think\nYou are an experienced English teacher and fiction editor. Always write the generated reading text in English and follow the requested TITLE/TEXT format exactly."
           },
           {role:"user", content:generationPrompt(topic, level, mode, words)}
         ],
-        reasoning:{effort:"none", exclude:true},
         max_tokens:1200,
         temperature:0.75,
         top_p:0.9,
@@ -428,7 +428,7 @@ export default {
     }catch(error){
       console.error("ReadFox generation failed", error);
       const status = error.status === 429 ? 429 : 502;
-      return json({error:status === 429 ? "Free model limit reached" : "The AI service could not generate a text"}, status, origin);
+      return json({error:status === 429 ? "Free model limit reached" : "The AI service could not generate a text", code:error.code || "invalid-ai-response", upstreamStatus:error.status || null, build:WORKER_BUILD}, status, origin);
     }
   }
 };
