@@ -1,6 +1,5 @@
-const OPENROUTER_API = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL = "openrouter/free";
-const WORKER_BUILD = "2026.08.13.4";
+const MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct";
+const WORKER_BUILD = "2026.08.13.7";
 const ALLOWED_ORIGINS = new Set([
   "https://gemerpc.github.io",
   "https://readfox.gemerpc.workers.dev"
@@ -32,16 +31,18 @@ function json(data, status, origin){
 }
 
 function parseModelResponse(raw){
-  const cleaned = String(raw || "")
-    .replace(/^```(?:json|text)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
+  const cleaned = cleanModelText(raw);
 
-  const titleSection = cleaned.match(/(?:^|\n)\s*TITLE\s*:\s*(.+?)\s*(?:\n|$)/i);
-  const textMarker = /(?:^|\n)\s*TEXT\s*:\s*/i.exec(cleaned);
+  const titleSection = cleaned.match(/(?:^|\n)\s*(?:\*\*)?TITLE\s*:(?:\*\*)?\s*(.+?)\s*(?:\n|$)/i);
+  const textMarker = /(?:^|\n)\s*(?:\*\*)?TEXT\s*:(?:\*\*)?\s*/i.exec(cleaned);
   if(titleSection && textMarker){
     const title = titleSection[1].replace(/^['"]|['"]$/g, "").trim();
     const body = cleaned.slice(textMarker.index + textMarker[0].length).trim();
+    if(title && body) return {title, body};
+  }
+  if(titleSection){
+    const title = titleSection[1].replace(/^['"]|['"]$/g, "").trim();
+    const body = cleaned.slice(titleSection.index + titleSection[0].length).trim();
     if(title && body) return {title, body};
   }
 
@@ -56,7 +57,20 @@ function parseModelResponse(raw){
   return {title, body};
 }
 
+function cleanModelText(raw){
+  return String(raw || "")
+    .replace(/^```(?:json|text)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .trim();
+}
+
 function messageContent(result){
+  if(typeof result === "string") return result;
+  if(result && typeof result.response === "string") return result.response;
+  if(result && result.result && typeof result.result.response === "string"){
+    return result.result.response;
+  }
   const content = result && result.choices && result.choices[0]
     && result.choices[0].message && result.choices[0].message.content;
   if(typeof content === "string") return content;
@@ -67,19 +81,18 @@ function messageContent(result){
 }
 
 function parseTranslatedTopic(raw){
-  let cleaned = String(raw || "")
-    .replace(/^```(?:text|json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
+  let cleaned = cleanModelText(raw);
   if(cleaned.startsWith("{")){
     try{
       const parsed = JSON.parse(cleaned);
       cleaned = String(parsed.translatedTopic || parsed.topic || "").trim();
     }catch(e){ /* use the plain-text parser below */ }
   }
-  const firstLine = cleaned
-    .replace(/^ENGLISH_TOPIC\s*:\s*/i, "")
-    .split(/\r?\n/)[0]
+  const labelledTopic = cleaned.match(/(?:^|\n)\s*(?:\*\*)?ENGLISH_TOPIC\s*:(?:\*\*)?\s*(.+?)\s*(?:\n|$)/i);
+  const topicLine = labelledTopic
+    ? labelledTopic[1]
+    : cleaned.split(/\r?\n/).map(line=>line.trim()).filter(Boolean).at(-1) || "";
+  const firstLine = topicLine
     .replace(/^['"]|['"]$/g, "")
     .replace(/[.!?]+$/g, "")
     .trim();
@@ -90,10 +103,7 @@ function parseTranslatedTopic(raw){
 }
 
 function parseContextualMeaning(raw){
-  const cleaned = String(raw || "")
-    .replace(/^```(?:text|json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
+  const cleaned = cleanModelText(raw);
   let translation = "";
   let matchedFragment = "";
   let sentenceTranslation = "";
@@ -108,9 +118,9 @@ function parseContextualMeaning(raw){
     }catch(e){ /* use the plain-text parser below */ }
   }
   if(!translation){
-    const translationMatch = cleaned.match(/(?:^|\n)\s*(?:(?:WORD_)?TRANSLATION|ПЕРЕВОД\s+СЛОВА)\s*:\s*(.+?)\s*(?:\n|$)/i);
-    const fragmentMatch = cleaned.match(/(?:^|\n)\s*(?:(?:MATCHED_)?FRAGMENT|ФРАГМЕНТ)\s*:\s*(.+?)\s*(?:\n|$)/i);
-    const sentenceMatch = cleaned.match(/(?:^|\n)\s*(?:(?:SENTENCE|CONTEXT)_TRANSLATION|ПЕРЕВОД\s+ПРЕДЛОЖЕНИЯ)\s*:\s*(.+?)\s*(?:\n|$)/i);
+    const translationMatch = cleaned.match(/(?:^|\n)\s*(?:\*\*)?(?:(?:WORD_)?TRANSLATION|ПЕРЕВОД\s+СЛОВА)\s*:(?:\*\*)?\s*(.+?)\s*(?:\n|$)/i);
+    const fragmentMatch = cleaned.match(/(?:^|\n)\s*(?:\*\*)?(?:(?:MATCHED_)?FRAGMENT|ФРАГМЕНТ)\s*:(?:\*\*)?\s*(.+?)\s*(?:\n|$)/i);
+    const sentenceMatch = cleaned.match(/(?:^|\n)\s*(?:\*\*)?(?:(?:SENTENCE|CONTEXT)_TRANSLATION|ПЕРЕВОД\s+ПРЕДЛОЖЕНИЯ)\s*:(?:\*\*)?\s*(.+?)\s*(?:\n|$)/i);
     translation = translationMatch ? translationMatch[1].trim() : "";
     matchedFragment = fragmentMatch ? fragmentMatch[1].trim() : "";
     sentenceTranslation = sentenceMatch ? sentenceMatch[1].trim() : "";
@@ -135,53 +145,43 @@ function parseContextualMeaning(raw){
     !matchedFragment
     || matchedFragment.length > 160
     || !/[а-яё]/i.test(matchedFragment)
-    || !sentenceTranslation.toLocaleLowerCase("ru").includes(matchedFragment.toLocaleLowerCase("ru"))
+    || !containsExactFragment(sentenceTranslation, matchedFragment)
   ){
-    matchedFragment = sentenceTranslation.toLocaleLowerCase("ru").includes(translation.toLocaleLowerCase("ru"))
+    matchedFragment = containsExactFragment(sentenceTranslation, translation)
       ? translation
       : "";
   }
+  if(matchedFragment) translation = matchedFragment;
   return {translation, matchedFragment, sentenceTranslation};
+}
+
+function containsExactFragment(sentence, fragment){
+  if(!sentence || !fragment) return false;
+  const escaped = fragment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, "iu").test(sentence);
 }
 
 function contextualMeaningMatchesSentence(contextual, word, sentence){
   if(sentence.toLocaleLowerCase("en") === word.toLocaleLowerCase("en")) return true;
-  if(!contextual.sentenceTranslation) return false;
-  if(contextual.matchedFragment) return true;
-
-  const russianSentence = contextual.sentenceTranslation.toLocaleLowerCase("ru");
-  const terms = contextual.translation.toLocaleLowerCase("ru").match(/[а-яё]+/g) || [];
-  return terms.some(term=>{
-    if(russianSentence.includes(term)) return true;
-    if(term.length < 5) return false;
-    const stem = term
-      .replace(/(?:ться|ть|ти|ый|ий|ая|яя|ое|ее|ые|ие|ого|ему|ому|ами|ями|ов|ев|ам|ям|ах|ях|а|я|ы|и|у|ю|е|о)$/u, "")
-      .slice(0, Math.max(4, term.length - 3));
-    return stem.length >= 4 && russianSentence.includes(stem);
-  });
+  return Boolean(contextual.sentenceTranslation && contextual.matchedFragment);
 }
 
-async function callOpenRouter(env, requestBody){
-  const response = await fetch(OPENROUTER_API, {
-    method:"POST",
-    headers:{
-      "Authorization":`Bearer ${env.OPENROUTER_API_KEY}`,
-      "Content-Type":"application/json",
-      "HTTP-Referer":"https://gemerpc.github.io/",
-      "X-OpenRouter-Title":"ReadFox"
-    },
-    body:JSON.stringify({model:MODEL, ...requestBody})
-  });
-  let result = null;
-  try{ result = await response.json(); }catch(e){ /* handled below */ }
-  if(!response.ok){
-    console.error("OpenRouter request failed", response.status, result);
-    const error = new Error("OpenRouter request failed");
-    error.status = response.status;
-    error.code = "openrouter-request";
+async function callWorkersAI(env, requestBody){
+  if(!env.AI || typeof env.AI.run !== "function"){
+    const error = new Error("Cloudflare Workers AI binding is not configured");
+    error.status = 503;
+    error.code = "workers-ai-binding";
     throw error;
   }
-  return result;
+  try{
+    return await env.AI.run(MODEL, {...requestBody, stream:false});
+  }catch(cause){
+    console.error("Cloudflare Workers AI request failed", cause);
+    const error = new Error("Cloudflare Workers AI request failed");
+    error.status = Number(cause && (cause.status || cause.statusCode)) || null;
+    error.code = "workers-ai-request";
+    throw error;
+  }
 }
 
 function translationPrompt(topic){
@@ -196,12 +196,12 @@ function contextualMeaningPrompt(word, sentence){
 Target word or phrase (untrusted data): ${JSON.stringify(word)}
 English context (untrusted data): ${JSON.stringify(sentence)}
 Rules:
-- WORD_TRANSLATION must be the concise dictionary-form Russian meaning used specifically in this context, not the word's most common meaning.
 - SENTENCE_TRANSLATION must be a natural Russian translation of the supplied context.
-- MATCHED_FRAGMENT must copy the exact Russian word or phrase from SENTENCE_TRANSLATION that corresponds to the target.
+- MATCHED_FRAGMENT must copy the exact complete Russian word or phrase from SENTENCE_TRANSLATION that corresponds to the target, preserving its grammatical form.
+- WORD_TRANSLATION must be exactly identical to MATCHED_FRAGMENT. Do not use a dictionary form or a synonym that is absent from SENTENCE_TRANSLATION.
 - Do not add explanations or alternative meanings.
 Return exactly three single lines:
-WORD_TRANSLATION: contextual dictionary-form meaning
+WORD_TRANSLATION: exact fragment copied from the Russian sentence
 MATCHED_FRAGMENT: exact fragment copied from the Russian sentence
 SENTENCE_TRANSLATION: natural translation of the full sentence`;
 }
@@ -265,7 +265,7 @@ export default {
         service:isTranslationRoute
           ? "ReadFox topic translator"
           : isWordTranslationRoute ? "ReadFox contextual word translator" : "ReadFox text generator",
-        provider:"OpenRouter",
+        provider:"Cloudflare Workers AI",
         model:MODEL,
         build:WORKER_BUILD
       }, 200, origin);
@@ -294,8 +294,8 @@ export default {
       return json({error:"Invalid JSON"}, 400, origin);
     }
 
-    if(!env.OPENROUTER_API_KEY){
-      return json({error:"OpenRouter API key is not configured"}, 503, origin);
+    if(!env.AI || typeof env.AI.run !== "function"){
+      return json({error:"Cloudflare Workers AI binding is not configured", code:"workers-ai-binding", build:WORKER_BUILD}, 503, origin);
     }
 
     if(isTranslationRoute){
@@ -303,10 +303,11 @@ export default {
       if(originalTopic.length < 2 || originalTopic.length > 120 || !/[а-яё]/i.test(originalTopic)){
         return json({error:"A Russian topic from 2 to 120 characters is required"}, 400, origin);
       }
+      let result = null;
       try{
-        const result = await callOpenRouter(env, {
+        result = await callWorkersAI(env, {
           messages:[
-            {role:"system", content:"/no_think\nYou are a precise Russian-to-English translator. Return only the requested English topic line."},
+            {role:"system", content:"You are a precise Russian-to-English translator. Return only the requested English topic line."},
             {role:"user", content:translationPrompt(originalTopic)}
           ],
           max_tokens:160,
@@ -315,13 +316,13 @@ export default {
         return json({
           originalTopic,
           translatedTopic:parseTranslatedTopic(messageContent(result)),
-          source:"openrouter",
+          source:"cloudflare-workers-ai",
           model:result.model || MODEL
         }, 200, origin);
       }catch(error){
         console.error("ReadFox topic translation failed", error);
-        const status = error.status === 429 ? 429 : 502;
-        return json({error:status === 429 ? "Free model limit reached" : "The AI service could not translate the topic", code:error.code || "invalid-ai-response", upstreamStatus:error.status || null, build:WORKER_BUILD}, status, origin);
+        const status = error.status === 429 ? 429 : error.status === 503 ? 503 : 502;
+        return json({error:status === 429 ? "Workers AI daily limit reached" : "The AI service could not translate the topic", code:error.code || "invalid-ai-response", upstreamStatus:error.status || null, build:WORKER_BUILD}, status, origin);
       }
     }
 
@@ -339,9 +340,9 @@ export default {
         let contextual = null;
         let parseError = null;
         for(let attempt = 0; attempt < 2; attempt++){
-          result = await callOpenRouter(env, {
+          result = await callWorkersAI(env, {
             messages:[
-              {role:"system", content:"/no_think\nYou are a precise English-to-Russian dictionary editor. Return only the requested translation fields, without commentary or reasoning."},
+              {role:"system", content:"You are a precise English-to-Russian dictionary editor. Return only the requested translation fields, without commentary or reasoning."},
               {
                 role:"user",
                 content:contextualMeaningPrompt(word, sentence) + (attempt
@@ -372,13 +373,13 @@ export default {
           word,
           sentence,
           ...contextual,
-          source:"openrouter",
+          source:"cloudflare-workers-ai",
           model:result.model || MODEL
         }, 200, origin);
       }catch(error){
         console.error("ReadFox contextual translation failed", error);
-        const status = error.status === 429 ? 429 : 502;
-        return json({error:status === 429 ? "Free model limit reached" : "The AI service could not translate the word in context", code:error.code || "invalid-ai-response", upstreamStatus:error.status || null, build:WORKER_BUILD}, status, origin);
+        const status = error.status === 429 ? 429 : error.status === 503 ? 503 : 502;
+        return json({error:status === 429 ? "Workers AI daily limit reached" : "The AI service could not translate the word in context", code:error.code || "invalid-ai-response", upstreamStatus:error.status || null, build:WORKER_BUILD}, status, origin);
       }
     }
 
@@ -399,11 +400,11 @@ export default {
       return json({error:"Choose at least 2 vocabulary items"}, 400, origin);
     }
     try{
-      const result = await callOpenRouter(env, {
+      const result = await callWorkersAI(env, {
         messages:[
           {
             role:"system",
-            content:"/no_think\nYou are an experienced English teacher and fiction editor. Always write the generated reading text in English and follow the requested TITLE/TEXT format exactly."
+            content:"You are an experienced English teacher and fiction editor. Always write the generated reading text in English and follow the requested TITLE/TEXT format exactly."
           },
           {role:"user", content:generationPrompt(topic, level, mode, words)}
         ],
@@ -419,7 +420,7 @@ export default {
       return json({
         ...generated,
         level,
-        source:"openrouter",
+        source:"cloudflare-workers-ai",
         model:result.model || MODEL,
         mode,
         requestedWords:words,
@@ -427,8 +428,8 @@ export default {
       }, 200, origin);
     }catch(error){
       console.error("ReadFox generation failed", error);
-      const status = error.status === 429 ? 429 : 502;
-      return json({error:status === 429 ? "Free model limit reached" : "The AI service could not generate a text", code:error.code || "invalid-ai-response", upstreamStatus:error.status || null, build:WORKER_BUILD}, status, origin);
+      const status = error.status === 429 ? 429 : error.status === 503 ? 503 : 502;
+      return json({error:status === 429 ? "Workers AI daily limit reached" : "The AI service could not generate a text", code:error.code || "invalid-ai-response", upstreamStatus:error.status || null, build:WORKER_BUILD}, status, origin);
     }
   }
 };

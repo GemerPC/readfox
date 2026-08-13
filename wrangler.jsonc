@@ -2,8 +2,8 @@
   "name": "readfox",
   "main": "worker/src/index.mjs",
   "compatibility_date": "2026-07-18",
-  "placement": {
-    "region": "aws:us-east-1"
+  "ai": {
+    "binding": "AI"
   },
   "assets": {
     "directory": "./",
