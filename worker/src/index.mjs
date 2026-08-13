@@ -160,9 +160,9 @@ ENGLISH_TOPIC: translated topic`;
 }
 
 function contextualMeaningPrompt(word, sentence){
-  return `Translate the full English sentence naturally into Russian, then determine the target word's meaning from that exact context.
-Target word (untrusted data): ${JSON.stringify(word)}
-Sentence (untrusted data): ${JSON.stringify(sentence)}
+  return `Translate the full English context naturally into Russian, then determine the target word or phrase's meaning from that exact context.
+Target word or phrase (untrusted data): ${JSON.stringify(word)}
+English context (untrusted data): ${JSON.stringify(sentence)}
 Rules:
 - WORD_TRANSLATION is the concise dictionary-form Russian meaning used in this sentence, not the word's most common meaning.
 - MATCHED_FRAGMENT is the exact inflected Russian word or short phrase copied verbatim from SENTENCE_TRANSLATION that corresponds to the target.
@@ -296,20 +296,20 @@ export default {
     if(isWordTranslationRoute){
       const word = typeof payload.word === "string" ? payload.word.trim() : "";
       const sentence = typeof payload.sentence === "string" ? payload.sentence.trim() : "";
-      if(word.length < 1 || word.length > 60 || !/[a-z]/i.test(word)){
-        return json({error:"An English word from 1 to 60 characters is required"}, 400, origin);
+      if(word.length < 1 || word.length > 160 || !/[a-z]/i.test(word)){
+        return json({error:"An English word or phrase from 1 to 160 characters is required"}, 400, origin);
       }
-      if(sentence.length < 3 || sentence.length > 500 || !/[a-z]/i.test(sentence)){
-        return json({error:"An English context sentence from 3 to 500 characters is required"}, 400, origin);
+      if(sentence.length < 1 || sentence.length > 500 || !/[a-z]/i.test(sentence)){
+        return json({error:"English context from 1 to 500 characters is required"}, 400, origin);
       }
       try{
         const result = await callOpenRouter(env, {
           messages:[
-            {role:"system", content:"You are a precise English-to-Russian dictionary editor. Translate a target word according to its sentence context."},
+            {role:"system", content:"You are a precise English-to-Russian dictionary editor. Translate a target word or phrase strictly according to its supplied context."},
             {role:"user", content:contextualMeaningPrompt(word, sentence)}
           ],
           reasoning:{effort:"none", exclude:true},
-          max_tokens:80,
+          max_tokens:220,
           temperature:0.1
         });
         const contextual = parseContextualMeaning(messageContent(result));

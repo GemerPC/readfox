@@ -37,7 +37,7 @@ globalThis.fetch = async (url, init) => {
   assert.equal(url, "https://openrouter.ai/api/v1/chat/completions");
   const request = JSON.parse(init.body);
   openRouterRequests.push(request);
-  assert.equal(request.max_tokens === 80 || request.max_tokens === 1200, true);
+  assert.equal(request.max_tokens === 80 || request.max_tokens === 220 || request.max_tokens === 1200, true);
   assert.deepEqual(request.reasoning, {effort:"none", exclude:true});
   assert.equal("response_format" in request, false);
   return new Response(JSON.stringify(modelReplies.shift()), {
