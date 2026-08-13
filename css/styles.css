@@ -476,6 +476,13 @@ main{max-width:1000px;margin:0 auto;padding:36px 24px 100px;}
 .dict-chip .dict-review.due{color:var(--amber);font-weight:600;}
 .dict-chip .t{color:var(--green);font-size:calc(16px * var(--font-scale));margin:3px 0 8px;font-family:'Lora',serif;}
 .dict-chip .t.pending{font-family:inherit;font-size:12px;color:var(--ink-muted);}
+.dict-ai-translate{
+  min-height:32px;margin:0 0 9px;padding:5px 9px;border:1px solid var(--green-dim);
+  border-radius:var(--radius-sm);background:transparent;color:var(--green);
+  font:inherit;font-size:11px;font-weight:600;cursor:pointer;
+}
+.dict-ai-translate:hover:not(:disabled){background:var(--green-bg);}
+.dict-ai-translate:disabled{border-color:var(--line);color:var(--ink-muted);cursor:wait;}
 .dict-chip .ex-row{display:flex;align-items:flex-start;gap:5px;margin-bottom:8px;}
 .dict-chip .ex{font-family:'Lora',serif;font-style:italic;font-size:calc(15px * var(--font-scale));color:var(--ink-muted);line-height:1.55;flex:1;}
 .dict-chip .ex mark{background:var(--amber-bg);color:var(--amber);font-style:normal;font-weight:600;border-radius:2px;}

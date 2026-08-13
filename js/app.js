@@ -2264,12 +2264,7 @@ async function fetchContextualWordTranslation(word, sentence){
       const matchedFragment = data && typeof data.matchedFragment === "string"
         ? data.matchedFragment.trim()
         : "";
-      if(
-        translated && /[а-яё]/i.test(translated)
-        && sentenceTranslation && /[а-яё]/i.test(sentenceTranslation)
-        && matchedFragment && /[а-яё]/i.test(matchedFragment)
-        && sentenceTranslation.toLocaleLowerCase("ru").includes(matchedFragment.toLocaleLowerCase("ru"))
-      ){
+      if(translated && /[а-яё]/i.test(translated)){
         result = {translation:translated, sentenceTranslation, matchedFragment};
       }
     }
@@ -2345,7 +2340,7 @@ function showTooltip(el, token, forcedSentence){
     : null;
   const savedAiTranslation = savedContextualTranslation || savedStandaloneTranslation;
   const hasSavedContext = sentence
-    ? !!(savedContextualTranslation && savedContextSentenceTranslation && savedContextMatchedFragment)
+    ? !!savedContextualTranslation
     : !!savedStandaloneTranslation;
 
   const view = {
@@ -2357,7 +2352,9 @@ function showTooltip(el, token, forcedSentence){
     contextualMatchedFragment:savedContextMatchedFragment,
     contextTranslationStatus:hasSavedContext ? "done" : "loading",
     sentenceTranslation:savedContextSentenceTranslation,
-    sentenceTranslationStatus:sentence ? (hasSavedContext ? "done" : "loading") : "skip"
+    sentenceTranslationStatus:sentence
+      ? (savedContextSentenceTranslation ? "done" : (hasSavedContext ? "skip" : "loading"))
+      : "skip"
   };
   if(view.audioUrl) playAudioUrl(view.audioUrl, token); else speak(token);
 
@@ -2512,7 +2509,7 @@ function showTooltip(el, token, forcedSentence){
       view.contextTranslationStatus = "done";
       if(sentence){
         view.sentenceTranslation = contextual.sentenceTranslation;
-        view.sentenceTranslationStatus = "done";
+        view.sentenceTranslationStatus = contextual.sentenceTranslation ? "done" : "skip";
       }
       persistAiTranslation(key, sentence, contextual);
       paint();
@@ -2676,6 +2673,7 @@ function renderDictionary(){
       </div>
       <div class="dict-ipa loading" data-ipa-key="${escapeHtml(key)}">ищем транскрипцию…</div>
       <div class="t${translationForContext(v, v.example) ? "" : " pending"}">${escapeHtml(translationForContext(v, v.example) || "AI-перевод ещё не получен")}</div>
+      ${translationForContext(v, v.example) ? "" : `<button class="dict-ai-translate" data-translate-key="${escapeHtml(key)}" type="button">Получить AI-перевод</button>`}
       ${v.example ? `<div class="ex-row">
         <div class="ex">${highlightInSentence(v.example, key)}</div>
         <button class="tt-speak tt-speak-sm" data-speak-example="${escapeHtml(v.example)}" aria-label="Прочитать предложение" title="Прочитать предложение">${SOUND_ICON}</button>
@@ -2704,6 +2702,22 @@ function renderDictionary(){
     if(speakBtn) speakBtn.addEventListener("click", ()=>speak(key));
     const speakExampleBtn = chip.querySelector("[data-speak-example]");
     if(speakExampleBtn) speakExampleBtn.addEventListener("click", ()=>speak(speakExampleBtn.dataset.speakExample));
+    const translateBtn = chip.querySelector("[data-translate-key]");
+    if(translateBtn) translateBtn.addEventListener("click", async ()=>{
+      const word = state.userWords[key];
+      if(!word) return;
+      translateBtn.disabled = true;
+      translateBtn.textContent = "AI переводит…";
+      const contextual = await fetchContextualWordTranslation(key, word.example || key);
+      if(!translateBtn.isConnected) return;
+      if(!contextual){
+        translateBtn.disabled = false;
+        translateBtn.textContent = "Повторить";
+        return;
+      }
+      persistAiTranslation(key, word.example || "", contextual);
+      renderDictionary();
+    });
   });
 
   content.querySelectorAll(".dict-ipa").forEach(ipaEl=>{
@@ -2906,10 +2920,10 @@ function renderFlashcards(){
               <button type="button" id="fcRetryTranslation">Повторить</button>
             </div>
             ${item.example
-              ? `<div class="fc-context-back${item.sentenceTranslation ? "" : " loading"}" id="fcContextBack">${
+              ? `<div class="fc-context-back${item.translation ? "" : " loading"}" id="fcContextBack">${
                   item.sentenceTranslation
                     ? (wordRu ? highlightInSentence(item.sentenceTranslation, wordRu) : escapeHtml(item.sentenceTranslation))
-                    : "переводим…"
+                    : (item.translation ? "" : "AI переводит контекст…")
                 }</div>`
               : `<div class="fc-hint">нажмите, чтобы увидеть английское слово</div>`}
           </div>
@@ -3022,7 +3036,7 @@ function renderFlashcards(){
       if(errorEl) errorEl.classList.add("hidden");
     });
   }
-  if(!item.translation || (item.example && !item.sentenceTranslation)) loadFlashcardAiTranslation();
+  if(!item.translation) loadFlashcardAiTranslation();
 }
 
 function afterPracticeStep(){
@@ -3100,7 +3114,7 @@ function renderQuiz(){
       return contextual;
     });
   }
-  const contextualPromise = item.translation && item.sentenceTranslation
+  const contextualPromise = item.translation
     ? Promise.resolve(item)
     : loadQuizAiTranslation();
 
@@ -3134,7 +3148,7 @@ function renderQuiz(){
     });
     if(!isCorrect) selectedButton.classList.add("wrong");
 
-    if(!item.translation || !item.sentenceTranslation){
+    if(!item.translation){
       feedback.className = "quiz-feedback";
       feedback.textContent = "AI переводит слово по контексту…";
       await contextualPromise;

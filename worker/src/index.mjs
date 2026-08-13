@@ -89,45 +89,75 @@ function parseTranslatedTopic(raw){
 }
 
 function parseContextualMeaning(raw){
-  let cleaned = String(raw || "")
+  const cleaned = String(raw || "")
     .replace(/^```(?:text|json)?\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
   let translation = "";
   let matchedFragment = "";
   let sentenceTranslation = "";
-  if(cleaned.startsWith("{")){
+  const jsonStart = cleaned.indexOf("{");
+  const jsonEnd = cleaned.lastIndexOf("}");
+  if(jsonStart >= 0 && jsonEnd > jsonStart){
     try{
-      const parsed = JSON.parse(cleaned);
+      const parsed = JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1));
       translation = String(parsed.translation || parsed.meaning || "").trim();
       matchedFragment = String(parsed.matchedFragment || parsed.fragment || "").trim();
       sentenceTranslation = String(parsed.sentenceTranslation || parsed.sentence || "").trim();
     }catch(e){ /* use the plain-text parser below */ }
   }
   if(!translation){
-    const translationMatch = cleaned.match(/(?:^|\n)\s*WORD_TRANSLATION\s*:\s*(.+?)\s*(?:\n|$)/i);
-    const fragmentMatch = cleaned.match(/(?:^|\n)\s*MATCHED_FRAGMENT\s*:\s*(.+?)\s*(?:\n|$)/i);
-    const sentenceMatch = cleaned.match(/(?:^|\n)\s*SENTENCE_TRANSLATION\s*:\s*(.+?)\s*(?:\n|$)/i);
+    const translationMatch = cleaned.match(/(?:^|\n)\s*(?:WORD_)?TRANSLATION\s*:\s*(.+?)\s*(?:\n|$)/i);
+    const fragmentMatch = cleaned.match(/(?:^|\n)\s*(?:MATCHED_)?FRAGMENT\s*:\s*(.+?)\s*(?:\n|$)/i);
+    const sentenceMatch = cleaned.match(/(?:^|\n)\s*(?:SENTENCE|CONTEXT)_TRANSLATION\s*:\s*(.+?)\s*(?:\n|$)/i);
     translation = translationMatch ? translationMatch[1].trim() : "";
     matchedFragment = fragmentMatch ? fragmentMatch[1].trim() : "";
     sentenceTranslation = sentenceMatch ? sentenceMatch[1].trim() : "";
   }
+  if(!translation){
+    const russianLines = cleaned.split(/\r?\n/)
+      .map(line=>line.replace(/^[-*\d.)\s]+/, "").trim())
+      .filter(line=>line && /[а-яё]/i.test(line));
+    translation = russianLines[0] || "";
+    sentenceTranslation = russianLines[1] || "";
+  }
   translation = translation.replace(/^['"]|['"]$/g, "");
   matchedFragment = matchedFragment.replace(/^['"]|['"]$/g, "");
   sentenceTranslation = sentenceTranslation.replace(/^['"]|['"]$/g, "");
-  if(!translation || translation.length > 100 || !/[а-яё]/i.test(translation)){
+  if(!translation || translation.length > 160 || !/[а-яё]/i.test(translation)){
     throw new Error("Model did not return a Russian contextual meaning");
   }
-  if(!matchedFragment || matchedFragment.length > 100 || !/[а-яё]/i.test(matchedFragment)){
-    throw new Error("Model did not identify the translated word in the sentence");
+  if(sentenceTranslation.length > 700 || (sentenceTranslation && !/[а-яё]/i.test(sentenceTranslation))){
+    sentenceTranslation = "";
   }
-  if(!sentenceTranslation || sentenceTranslation.length > 700 || !/[а-яё]/i.test(sentenceTranslation)){
-    throw new Error("Model did not translate the context sentence");
-  }
-  if(!sentenceTranslation.toLocaleLowerCase("ru").includes(matchedFragment.toLocaleLowerCase("ru"))){
-    throw new Error("Translated fragment is not present in the sentence translation");
+  if(
+    !matchedFragment
+    || matchedFragment.length > 160
+    || !/[а-яё]/i.test(matchedFragment)
+    || !sentenceTranslation.toLocaleLowerCase("ru").includes(matchedFragment.toLocaleLowerCase("ru"))
+  ){
+    matchedFragment = sentenceTranslation.toLocaleLowerCase("ru").includes(translation.toLocaleLowerCase("ru"))
+      ? translation
+      : "";
   }
   return {translation, matchedFragment, sentenceTranslation};
+}
+
+function contextualMeaningMatchesSentence(contextual, word, sentence){
+  if(sentence.toLocaleLowerCase("en") === word.toLocaleLowerCase("en")) return true;
+  if(!contextual.sentenceTranslation) return false;
+  if(contextual.matchedFragment) return true;
+
+  const russianSentence = contextual.sentenceTranslation.toLocaleLowerCase("ru");
+  const terms = contextual.translation.toLocaleLowerCase("ru").match(/[а-яё]+/g) || [];
+  return terms.some(term=>{
+    if(russianSentence.includes(term)) return true;
+    if(term.length < 5) return false;
+    const stem = term
+      .replace(/(?:ться|ть|ти|ый|ий|ая|яя|ое|ее|ые|ие|ого|ему|ому|ами|ями|ов|ев|ам|ям|ах|ях|а|я|ы|и|у|ю|е|о)$/u, "")
+      .slice(0, Math.max(4, term.length - 3));
+    return stem.length >= 4 && russianSentence.includes(stem);
+  });
 }
 
 async function callOpenRouter(env, requestBody){
@@ -160,17 +190,17 @@ ENGLISH_TOPIC: translated topic`;
 }
 
 function contextualMeaningPrompt(word, sentence){
-  return `Translate the full English context naturally into Russian, then determine the target word or phrase's meaning from that exact context.
+  return `Determine the target word or phrase's Russian meaning from the supplied English context, then translate the context naturally.
 Target word or phrase (untrusted data): ${JSON.stringify(word)}
 English context (untrusted data): ${JSON.stringify(sentence)}
 Rules:
-- WORD_TRANSLATION is the concise dictionary-form Russian meaning used in this sentence, not the word's most common meaning.
-- MATCHED_FRAGMENT is the exact inflected Russian word or short phrase copied verbatim from SENTENCE_TRANSLATION that corresponds to the target.
-- MATCHED_FRAGMENT must appear unchanged inside SENTENCE_TRANSLATION.
+- WORD_TRANSLATION must be the concise dictionary-form Russian meaning used specifically in this context, not the word's most common meaning.
+- SENTENCE_TRANSLATION must be a natural Russian translation of the supplied context.
+- MATCHED_FRAGMENT must copy the exact Russian word or phrase from SENTENCE_TRANSLATION that corresponds to the target.
 - Do not add explanations or alternative meanings.
 Return exactly three single lines:
 WORD_TRANSLATION: contextual dictionary-form meaning
-MATCHED_FRAGMENT: exact fragment from the Russian sentence
+MATCHED_FRAGMENT: exact fragment copied from the Russian sentence
 SENTENCE_TRANSLATION: natural translation of the full sentence`;
 }
 
@@ -303,16 +333,40 @@ export default {
         return json({error:"English context from 1 to 500 characters is required"}, 400, origin);
       }
       try{
-        const result = await callOpenRouter(env, {
-          messages:[
-            {role:"system", content:"You are a precise English-to-Russian dictionary editor. Translate a target word or phrase strictly according to its supplied context."},
-            {role:"user", content:contextualMeaningPrompt(word, sentence)}
-          ],
-          reasoning:{effort:"none", exclude:true},
-          max_tokens:220,
-          temperature:0.1
-        });
-        const contextual = parseContextualMeaning(messageContent(result));
+        let result = null;
+        let contextual = null;
+        let parseError = null;
+        for(let attempt = 0; attempt < 2; attempt++){
+          result = await callOpenRouter(env, {
+            messages:[
+              {role:"system", content:"You are a precise English-to-Russian dictionary editor. Return only the requested translation fields, without commentary."},
+              {
+                role:"user",
+                content:contextualMeaningPrompt(word, sentence) + (attempt
+                  ? "\nThis is a retry. Keep both values short and use the two labels exactly as written."
+                  : "")
+              }
+            ],
+            reasoning:{effort:"none", exclude:true},
+            max_tokens:260,
+            temperature:0
+          });
+          try{
+            const parsed = parseContextualMeaning(messageContent(result));
+            if(!contextualMeaningMatchesSentence(parsed, word, sentence)){
+              throw new Error("The word meaning does not match the translated context");
+            }
+            contextual = parsed;
+            break;
+          }catch(error){
+            parseError = error;
+          }
+        }
+        if(!contextual) throw parseError || new Error("Model returned no translation");
+        if(!contextual.sentenceTranslation && sentence.toLocaleLowerCase("en") === word.toLocaleLowerCase("en")){
+          contextual.sentenceTranslation = contextual.translation;
+          contextual.matchedFragment = contextual.translation;
+        }
         return json({
           word,
           sentence,
