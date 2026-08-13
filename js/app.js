@@ -555,6 +555,12 @@ function normalizeReviewState(word){
   if(!word.contextTranslations || typeof word.contextTranslations !== "object" || Array.isArray(word.contextTranslations)){
     word.contextTranslations = {};
   }
+  if(!word.contextSentenceTranslations || typeof word.contextSentenceTranslations !== "object" || Array.isArray(word.contextSentenceTranslations)){
+    word.contextSentenceTranslations = {};
+  }
+  if(!word.contextMatchedFragments || typeof word.contextMatchedFragments !== "object" || Array.isArray(word.contextMatchedFragments)){
+    word.contextMatchedFragments = {};
+  }
 }
 
 function normalizeSettings(settings){
@@ -1813,12 +1819,22 @@ function refreshWordVisuals(){
   const dictView = document.querySelector('.view[data-view="dictionary"]');
   if(dictView && !dictView.classList.contains("hidden")) renderDictionary();
 }
-function addWord(key, translation, status, example, contextAware = false){
+function addWord(key, translation, status, example, contextDetails = null){
   const prev = state.userWords[key];
   const contextTranslations = prev && prev.contextTranslations && typeof prev.contextTranslations === "object"
     ? {...prev.contextTranslations}
     : {};
-  if(contextAware && example) contextTranslations[example] = translation;
+  const contextSentenceTranslations = prev && prev.contextSentenceTranslations && typeof prev.contextSentenceTranslations === "object"
+    ? {...prev.contextSentenceTranslations}
+    : {};
+  const contextMatchedFragments = prev && prev.contextMatchedFragments && typeof prev.contextMatchedFragments === "object"
+    ? {...prev.contextMatchedFragments}
+    : {};
+  if(contextDetails && example){
+    contextTranslations[example] = translation;
+    if(contextDetails.sentenceTranslation) contextSentenceTranslations[example] = contextDetails.sentenceTranslation;
+    if(contextDetails.matchedFragment) contextMatchedFragments[example] = contextDetails.matchedFragment;
+  }
   state.userWords[key] = {
     ...(prev || initialReviewState(status)),
     translation,
@@ -1827,6 +1843,8 @@ function addWord(key, translation, status, example, contextAware = false){
     example: (prev && prev.example) ? prev.example : (example || ""),
     contexts:mergeContexts(prev, example),
     contextTranslations,
+    contextSentenceTranslations,
+    contextMatchedFragments,
     type: "word",
     source: BASE_DICT.hasOwnProperty(key) ? "built-in" : "custom"
   };
@@ -2270,7 +2288,20 @@ async function fetchContextualWordTranslation(word, sentence){
     if(response.ok){
       const data = await response.json();
       const translated = data && typeof data.translation === "string" ? data.translation.trim() : "";
-      if(translated && /[а-яё]/i.test(translated)) result = translated;
+      const sentenceTranslation = data && typeof data.sentenceTranslation === "string"
+        ? data.sentenceTranslation.trim()
+        : "";
+      const matchedFragment = data && typeof data.matchedFragment === "string"
+        ? data.matchedFragment.trim()
+        : "";
+      if(
+        translated && /[а-яё]/i.test(translated)
+        && sentenceTranslation && /[а-яё]/i.test(sentenceTranslation)
+        && matchedFragment && /[а-яё]/i.test(matchedFragment)
+        && sentenceTranslation.toLocaleLowerCase("ru").includes(matchedFragment.toLocaleLowerCase("ru"))
+      ){
+        result = {translation:translated, sentenceTranslation, matchedFragment};
+      }
     }
   }catch(e){ /* словарный перевод останется резервным */ }
   contextualTranslationCache[cacheKey] = result;
@@ -2319,6 +2350,12 @@ function showTooltip(el, token, forcedSentence){
   const savedContextualTranslation = sentence && savedWord && savedWord.contextTranslations
     ? savedWord.contextTranslations[sentence] || null
     : null;
+  const savedContextSentenceTranslation = sentence && savedWord && savedWord.contextSentenceTranslations
+    ? savedWord.contextSentenceTranslations[sentence] || null
+    : null;
+  const savedContextMatchedFragment = sentence && savedWord && savedWord.contextMatchedFragments
+    ? savedWord.contextMatchedFragments[sentence] || null
+    : null;
   if(savedContextualTranslation){
     info = info ? {...info, translation:savedContextualTranslation} : {key, translation:savedContextualTranslation};
   }
@@ -2332,9 +2369,12 @@ function showTooltip(el, token, forcedSentence){
     ipaStatus: "loading",
     audioUrl: (transcriptionCache[key.toLowerCase()] && transcriptionCache[key.toLowerCase()].audio) || null,
     contextualWordTranslation: savedContextualTranslation,
-    contextTranslationStatus: sentence ? (savedContextualTranslation ? "done" : "loading") : "skip",
-    sentenceTranslation: null,   // перевод контекстного предложения, добавляется асинхронно
-    sentenceTranslationStatus: sentence ? "loading" : "skip"
+    contextualMatchedFragment:savedContextMatchedFragment,
+    contextTranslationStatus: sentence
+      ? (savedContextualTranslation && savedContextSentenceTranslation && savedContextMatchedFragment ? "done" : "loading")
+      : "skip",
+    sentenceTranslation:savedContextSentenceTranslation,
+    sentenceTranslationStatus: sentence ? (savedContextSentenceTranslation ? "done" : "loading") : "skip"
   };
   if(view.audioUrl) playAudioUrl(view.audioUrl, token); else speak(token);
 
@@ -2366,6 +2406,8 @@ function showTooltip(el, token, forcedSentence){
         inner += `<div class="tt-source">перевод по контексту</div>`;
       } else if(view.fromApi){
         inner += `<div class="tt-source">🌐 перевод из онлайн-словаря</div>`;
+      } else if(sentence && view.contextTranslationStatus === "failed"){
+        inner += `<div class="tt-source">словарный перевод · контекстный сервис недоступен</div>`;
       }
       const freq = frequencyInfo(view.info.key);
       inner += `<div class="tt-freq">
@@ -2388,9 +2430,9 @@ function showTooltip(el, token, forcedSentence){
       if(view.sentenceTranslationStatus === "loading"){
         inner += `<div class="tt-sentence-ru loading">переводим предложение…</div>`;
       } else if(view.sentenceTranslation){
-        // Подсвечиваем перевод самого слова внутри перевода предложения, если оно там встречается
-        const wordRu = view.info ? view.info.translation.split(/[,，;(]/)[0].trim() : null;
-        inner += `<div class="tt-sentence-ru">${wordRu ? highlightInSentence(view.sentenceTranslation, wordRu) : escapeHtml(view.sentenceTranslation)}</div>`;
+        const matchedRu = view.contextualMatchedFragment
+          || (view.info ? view.info.translation.split(/[,，;(]/)[0].trim() : null);
+        inner += `<div class="tt-sentence-ru">${matchedRu ? highlightInSentence(view.sentenceTranslation, matchedRu) : escapeHtml(view.sentenceTranslation)}</div>`;
       }
     }
 
@@ -2441,13 +2483,19 @@ function showTooltip(el, token, forcedSentence){
     if(speakContext) speakContext.addEventListener("click", ()=>speak(sentence));
     const addLearning = document.getElementById("ttAddLearning");
     if(addLearning) addLearning.addEventListener("click", ()=>{
-      addWord(curKey, view.info.translation, "learning", sentence, !!view.contextualWordTranslation);
+      addWord(curKey, view.info.translation, "learning", sentence, view.contextualWordTranslation ? {
+        sentenceTranslation:view.sentenceTranslation,
+        matchedFragment:view.contextualMatchedFragment
+      } : null);
       showToast("Добавлено в «В изучении» ✓");
       paint();
     });
     const addKnown = document.getElementById("ttAddKnown");
     if(addKnown) addKnown.addEventListener("click", ()=>{
-      addWord(curKey, view.info.translation, "known", sentence, !!view.contextualWordTranslation);
+      addWord(curKey, view.info.translation, "known", sentence, view.contextualWordTranslation ? {
+        sentenceTranslation:view.sentenceTranslation,
+        matchedFragment:view.contextualMatchedFragment
+      } : null);
       showToast("Добавлено в «Изучено» ✓");
       paint();
     });
@@ -2510,30 +2558,42 @@ function showTooltip(el, token, forcedSentence){
 
   // Основной перевод слова берём с учётом предложения. Словарное значение
   // остаётся резервным, если AI недоступен.
-  if(sentence && !savedContextualTranslation){
-    fetchContextualWordTranslation(token, sentence).then(translated=>{
-      view.contextTranslationStatus = translated ? "done" : "failed";
-      if(translated){
+  if(sentence && (!savedContextualTranslation || !savedContextSentenceTranslation || !savedContextMatchedFragment)){
+    fetchContextualWordTranslation(token, sentence).then(contextual=>{
+      view.contextTranslationStatus = contextual ? "done" : "failed";
+      if(contextual){
         const contextKey = view.info ? view.info.key : key;
-        view.info = {...(view.info || {}), key:contextKey, translation:translated};
-        view.contextualWordTranslation = translated;
+        view.info = {...(view.info || {}), key:contextKey, translation:contextual.translation};
+        view.contextualWordTranslation = contextual.translation;
+        view.contextualMatchedFragment = contextual.matchedFragment;
+        view.sentenceTranslation = contextual.sentenceTranslation;
+        view.sentenceTranslationStatus = "done";
         view.fromApi = false;
         view.apiStatus = "done";
 
         const storedWord = state.userWords[contextKey];
         if(storedWord){
           normalizeReviewState(storedWord);
-          storedWord.contextTranslations[sentence] = translated;
-          if(storedWord.example === sentence) storedWord.translation = translated;
+          storedWord.contextTranslations[sentence] = contextual.translation;
+          storedWord.contextSentenceTranslations[sentence] = contextual.sentenceTranslation;
+          storedWord.contextMatchedFragments[sentence] = contextual.matchedFragment;
+          if(storedWord.example === sentence) storedWord.translation = contextual.translation;
           saveState();
         }
+      } else {
+        fetchApiTranslation(sentence).then(translated=>{
+          if(reqId !== tooltipRequestId || view.contextualWordTranslation) return;
+          view.sentenceTranslationStatus = "done";
+          view.sentenceTranslation = translated || null;
+          paint();
+        });
       }
       paint();
     });
   }
 
-  // Перевод контекстного предложения — запрашиваем всегда, если предложение есть.
-  if(sentence){
+  // Внешний переводчик предложения используется только без AI-маршрута.
+  if(sentence && !savedContextSentenceTranslation && !aiContextTranslationEndpoint()){
     fetchApiTranslation(sentence).then(translated=>{
       view.sentenceTranslationStatus = "done";
       view.sentenceTranslation = translated || null;
@@ -2673,7 +2733,7 @@ function renderDictionary(){
         <button class="tt-speak" data-speak="${escapeHtml(key)}" aria-label="Произнести" title="Произнести" style="width:22px;height:22px;font-size:11px;">${SOUND_ICON}</button>
       </div>
       <div class="dict-ipa loading" data-ipa-key="${escapeHtml(key)}">ищем транскрипцию…</div>
-      <div class="t">${escapeHtml(v.translation)}</div>
+      <div class="t">${escapeHtml(translationForContext(v, v.example))}</div>
       ${v.example ? `<div class="ex-row">
         <div class="ex">${highlightInSentence(v.example, key)}</div>
         <button class="tt-speak tt-speak-sm" data-speak-example="${escapeHtml(v.example)}" aria-label="Прочитать предложение" title="Прочитать предложение">${SOUND_ICON}</button>
@@ -2728,10 +2788,39 @@ function shuffle(arr){
   }
   return arr;
 }
+
+function translationForContext(word, context){
+  return context && word && word.contextTranslations && word.contextTranslations[context]
+    ? word.contextTranslations[context]
+    : (word && word.translation) || "";
+}
+
+function sentenceTranslationForContext(word, context){
+  return context && word && word.contextSentenceTranslations
+    ? word.contextSentenceTranslations[context] || ""
+    : "";
+}
+
+function matchedFragmentForContext(word, context){
+  return context && word && word.contextMatchedFragments
+    ? word.contextMatchedFragments[context] || ""
+    : "";
+}
+
 function buildPracticeQueue(){
   practiceQueue = shuffle(Object.entries(state.userWords)
     .filter(([,v])=>isReviewDue(v))
-    .map(([k,v])=>({key:k, translation:v.translation, example:v.example||"", reviewLevel:v.reviewLevel})));
+    .map(([k,v])=>{
+      const example = v.example || "";
+      return {
+        key:k,
+        translation:translationForContext(v, example),
+        example,
+        sentenceTranslation:sentenceTranslationForContext(v, example),
+        matchedFragment:matchedFragmentForContext(v, example),
+        reviewLevel:v.reviewLevel
+      };
+    }));
   practiceIndex = 0;
   practiceRevealed = false;
 }
@@ -2790,8 +2879,10 @@ function buildQuizQueue(){
       const context = selectQuizContext(key, value);
       return context ? {
         key,
-        translation:value.translation,
+        translation:translationForContext(value, context),
         example:context,
+        sentenceTranslation:sentenceTranslationForContext(value, context),
+        matchedFragment:matchedFragmentForContext(value, context),
         options:buildQuizOptions(key),
         wasKnown:value.status === "known"
       } : null;
@@ -2836,7 +2927,8 @@ function renderFlashcards(){
   practiceRevealed = false;
 
   // Вычисляем перевод слова (первое значение без уточнений) для подсветки
-  const wordRu = item.translation ? item.translation.split(/[,，;(]/)[0].trim() : null;
+  const wordRu = item.matchedFragment
+    || (item.translation ? item.translation.split(/[,，;(]/)[0].trim() : null);
 
   content.innerHTML = `
     <div class="practice-wrap">
@@ -2867,7 +2959,11 @@ function renderFlashcards(){
             <div class="fc-side-label">🇷🇺 Русский</div>
             <div class="fc-word-ru">${escapeHtml(item.translation)}</div>
             ${item.example
-              ? `<div class="fc-context-back loading" id="fcContextBack">переводим…</div>`
+              ? `<div class="fc-context-back${item.sentenceTranslation ? "" : " loading"}" id="fcContextBack">${
+                  item.sentenceTranslation
+                    ? (wordRu ? highlightInSentence(item.sentenceTranslation, wordRu) : escapeHtml(item.sentenceTranslation))
+                    : "переводим…"
+                }</div>`
               : `<div class="fc-hint">нажмите, чтобы увидеть английское слово</div>`}
           </div>
 
@@ -2933,14 +3029,43 @@ function renderFlashcards(){
   });
 
   /* ── Перевод предложения ────────────────────── */
-  if(item.example){
-    fetchApiTranslation(item.example).then(translated=>{
+  if(item.example && !item.sentenceTranslation){
+    fetchContextualWordTranslation(item.key, item.example).then(contextual=>{
       if(reqId !== practiceRequestId) return;
       const backEl  = document.getElementById("fcContextBack");
-      const html = translated
-        ? (wordRu ? highlightInSentence(translated, wordRu) : escapeHtml(translated))
+      const html = contextual
+        ? highlightInSentence(contextual.sentenceTranslation, contextual.matchedFragment)
         : null;
-      if(backEl){  if(html){ backEl.innerHTML  = html; backEl.classList.remove("loading");  } else backEl.remove(); }
+      if(contextual){
+        item.translation = contextual.translation;
+        item.sentenceTranslation = contextual.sentenceTranslation;
+        item.matchedFragment = contextual.matchedFragment;
+        const storedWord = state.userWords[item.key];
+        if(storedWord){
+          normalizeReviewState(storedWord);
+          storedWord.contextTranslations[item.example] = contextual.translation;
+          storedWord.contextSentenceTranslations[item.example] = contextual.sentenceTranslation;
+          storedWord.contextMatchedFragments[item.example] = contextual.matchedFragment;
+          if(storedWord.example === item.example) storedWord.translation = contextual.translation;
+          saveState();
+        }
+        const wordEl = document.querySelector(".fc-word-ru");
+        if(wordEl) wordEl.textContent = contextual.translation;
+      }
+      if(backEl){
+        if(html){
+          backEl.innerHTML = html;
+          backEl.classList.remove("loading");
+        } else {
+          fetchApiTranslation(item.example).then(translated=>{
+            if(reqId !== practiceRequestId || !backEl.isConnected) return;
+            if(translated){
+              backEl.textContent = translated;
+              backEl.classList.remove("loading");
+            } else backEl.remove();
+          });
+        }
+      }
     });
   }
 }
@@ -3010,8 +3135,26 @@ function renderQuiz(){
   const optionButtons = [...content.querySelectorAll("[data-quiz-option]")];
   const feedback = document.getElementById("quizFeedback");
   const nextBtn = document.getElementById("quizNext");
+  const contextualPromise = item.sentenceTranslation
+    ? Promise.resolve(null)
+    : fetchContextualWordTranslation(item.key, item.example).then(contextual=>{
+        if(!contextual) return null;
+        item.translation = contextual.translation;
+        item.sentenceTranslation = contextual.sentenceTranslation;
+        item.matchedFragment = contextual.matchedFragment;
+        const storedWord = state.userWords[item.key];
+        if(storedWord){
+          normalizeReviewState(storedWord);
+          storedWord.contextTranslations[item.example] = contextual.translation;
+          storedWord.contextSentenceTranslations[item.example] = contextual.sentenceTranslation;
+          storedWord.contextMatchedFragments[item.example] = contextual.matchedFragment;
+          if(storedWord.example === item.example) storedWord.translation = contextual.translation;
+          saveState();
+        }
+        return contextual;
+      });
 
-  function answer(selected, selectedButton){
+  async function answer(selected, selectedButton){
     if(quizAnswered) return;
     quizAnswered = true;
     const isCorrect = selected === item.key;
@@ -3024,6 +3167,11 @@ function renderQuiz(){
     });
     if(!isCorrect) selectedButton.classList.add("wrong");
 
+    if(!item.sentenceTranslation){
+      feedback.className = "quiz-feedback";
+      feedback.textContent = "Уточняем перевод по контексту…";
+      await contextualPromise;
+    }
     feedback.className = "quiz-feedback " + (isCorrect ? "success" : "error");
     feedback.innerHTML = isCorrect
       ? `<strong>Верно.</strong> ${escapeHtml(item.translation)} <span class="quiz-review-note">${escapeHtml(reviewDueLabel(state.userWords[item.key]))}</span>`

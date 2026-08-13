@@ -8,7 +8,7 @@ const modelReplies = [
   },
   {
     model:"test/context-translator",
-    choices:[{finish_reason:"stop", message:{content:"RUSSIAN_MEANING: берег"}}]
+    choices:[{finish_reason:"stop", message:{content:"WORD_TRANSLATION: берег\nMATCHED_FRAGMENT: берегу\nSENTENCE_TRANSLATION: Мы сидели на берегу реки."}}]
   },
   {
     model:"test/free",
@@ -25,6 +25,10 @@ const modelReplies = [
   {
     model:"test/free",
     choices:[{finish_reason:"stop", message:{content:"TITLE: The Missing Background\nTEXT:\nMia tried to recognize a familiar voice while she waited near the narrow entrance."}}]
+  },
+  {
+    model:"test/context-translator",
+    choices:[{finish_reason:"stop", message:{content:"WORD_TRANSLATION: банк\nMATCHED_FRAGMENT: банк\nSENTENCE_TRANSLATION: Мы сидели на берегу реки."}}]
   }
 ];
 
@@ -77,6 +81,8 @@ const contextualResponse = await translateWord("bank", "We sat on the bank of th
 assert.equal(contextualResponse.status, 200);
 const contextual = await contextualResponse.json();
 assert.equal(contextual.translation, "берег");
+assert.equal(contextual.matchedFragment, "берегу");
+assert.equal(contextual.sentenceTranslation, "Мы сидели на берегу реки.");
 assert.match(openRouterRequests[1].messages[1].content, /bank/);
 assert.match(openRouterRequests[1].messages[1].content, /river/);
 
@@ -102,6 +108,9 @@ const wordsResult = await wordsResponse.json();
 assert.equal(wordsResult.mode, "words");
 assert.deepEqual(wordsResult.requestedWords, ["background", "recognize", "narrow"]);
 assert.match(openRouterRequests[5].messages[1].content, /Use every target item naturally/);
+
+const inconsistentContextResponse = await translateWord("bank", "We sat on the bank of the river.");
+assert.equal(inconsistentContextResponse.status, 502);
 
 const assetResponse = await worker.fetch(
   new Request("https://readfox.gemerpc.workers.dev/"),

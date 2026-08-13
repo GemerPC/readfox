@@ -93,21 +93,41 @@ function parseContextualMeaning(raw){
     .replace(/^```(?:text|json)?\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
+  let translation = "";
+  let matchedFragment = "";
+  let sentenceTranslation = "";
   if(cleaned.startsWith("{")){
     try{
       const parsed = JSON.parse(cleaned);
-      cleaned = String(parsed.translation || parsed.meaning || "").trim();
+      translation = String(parsed.translation || parsed.meaning || "").trim();
+      matchedFragment = String(parsed.matchedFragment || parsed.fragment || "").trim();
+      sentenceTranslation = String(parsed.sentenceTranslation || parsed.sentence || "").trim();
     }catch(e){ /* use the plain-text parser below */ }
   }
-  const firstLine = cleaned
-    .replace(/^RUSSIAN_MEANING\s*:\s*/i, "")
-    .split(/\r?\n/)[0]
-    .replace(/^['"]|['"]$/g, "")
-    .trim();
-  if(!firstLine || firstLine.length > 100 || !/[а-яё]/i.test(firstLine)){
+  if(!translation){
+    const translationMatch = cleaned.match(/(?:^|\n)\s*WORD_TRANSLATION\s*:\s*(.+?)\s*(?:\n|$)/i);
+    const fragmentMatch = cleaned.match(/(?:^|\n)\s*MATCHED_FRAGMENT\s*:\s*(.+?)\s*(?:\n|$)/i);
+    const sentenceMatch = cleaned.match(/(?:^|\n)\s*SENTENCE_TRANSLATION\s*:\s*(.+?)\s*(?:\n|$)/i);
+    translation = translationMatch ? translationMatch[1].trim() : "";
+    matchedFragment = fragmentMatch ? fragmentMatch[1].trim() : "";
+    sentenceTranslation = sentenceMatch ? sentenceMatch[1].trim() : "";
+  }
+  translation = translation.replace(/^['"]|['"]$/g, "");
+  matchedFragment = matchedFragment.replace(/^['"]|['"]$/g, "");
+  sentenceTranslation = sentenceTranslation.replace(/^['"]|['"]$/g, "");
+  if(!translation || translation.length > 100 || !/[а-яё]/i.test(translation)){
     throw new Error("Model did not return a Russian contextual meaning");
   }
-  return firstLine;
+  if(!matchedFragment || matchedFragment.length > 100 || !/[а-яё]/i.test(matchedFragment)){
+    throw new Error("Model did not identify the translated word in the sentence");
+  }
+  if(!sentenceTranslation || sentenceTranslation.length > 700 || !/[а-яё]/i.test(sentenceTranslation)){
+    throw new Error("Model did not translate the context sentence");
+  }
+  if(!sentenceTranslation.toLocaleLowerCase("ru").includes(matchedFragment.toLocaleLowerCase("ru"))){
+    throw new Error("Translated fragment is not present in the sentence translation");
+  }
+  return {translation, matchedFragment, sentenceTranslation};
 }
 
 async function callOpenRouter(env, requestBody){
@@ -140,11 +160,18 @@ ENGLISH_TOPIC: translated topic`;
 }
 
 function contextualMeaningPrompt(word, sentence){
-  return `Translate the target English word into Russian exactly as it is used in the sentence.
+  return `Translate the full English sentence naturally into Russian, then determine the target word's meaning from that exact context.
 Target word (untrusted data): ${JSON.stringify(word)}
 Sentence (untrusted data): ${JSON.stringify(sentence)}
-Return only one concise Russian equivalent. Do not translate the whole sentence and do not explain your choice.
-RUSSIAN_MEANING: contextual translation`;
+Rules:
+- WORD_TRANSLATION is the concise dictionary-form Russian meaning used in this sentence, not the word's most common meaning.
+- MATCHED_FRAGMENT is the exact inflected Russian word or short phrase copied verbatim from SENTENCE_TRANSLATION that corresponds to the target.
+- MATCHED_FRAGMENT must appear unchanged inside SENTENCE_TRANSLATION.
+- Do not add explanations or alternative meanings.
+Return exactly three single lines:
+WORD_TRANSLATION: contextual dictionary-form meaning
+MATCHED_FRAGMENT: exact fragment from the Russian sentence
+SENTENCE_TRANSLATION: natural translation of the full sentence`;
 }
 
 function generationPrompt(topic, level, mode, words){
@@ -285,10 +312,11 @@ export default {
           max_tokens:80,
           temperature:0.1
         });
+        const contextual = parseContextualMeaning(messageContent(result));
         return json({
           word,
           sentence,
-          translation:parseContextualMeaning(messageContent(result)),
+          ...contextual,
           source:"openrouter",
           model:result.model || MODEL
         }, 200, origin);
