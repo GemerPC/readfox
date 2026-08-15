@@ -227,6 +227,49 @@ const anotherPhraseFallback = await anotherPhraseFallbackResponse.json();
 assert.equal(anotherPhraseFallback.translation, "кормить уток");
 assert.equal(anotherPhraseFallback.matchedFragment, "кормить уток");
 
+const correctedContextResponse = await translateWord(
+  "realized",
+  "They had not realized how clearly the sound traveled through the wall.",
+  {
+    AI:{async run(){
+      return {choices:[{message:{content:"WORD_TRANSLATION: что\nMATCHED_FRAGMENT: что\nSENTENCE_TRANSLATION: Они не осознали, что звук проходит через стену."}}]};
+    }},
+    GOOGLE_TRANSLATE_FETCH:async url=>{
+      assert.match(new URL(url).searchParams.get("q"), /「realized」/);
+      return new Response(JSON.stringify([[['Они не «осознали», насколько ясно звук проходит через стену.']]]), {status:200});
+    }
+  }
+);
+assert.equal(correctedContextResponse.status, 200);
+const correctedContext = await correctedContextResponse.json();
+assert.equal(correctedContext.translation, "осознали");
+assert.equal(correctedContext.matchedFragment, "осознали");
+assert.equal(correctedContext.source, "google-contextual-mt");
+
+const correctedPreparationResponse = await prepareText([{
+  id:"s-realized",
+  text:"They had not realized how clearly the sound traveled through the wall.",
+  tokens:["They", "had", "not", "realized", "how", "clearly", "the", "sound", "traveled", "through", "the", "wall"],
+  words:[{id:"w-realized", token:"realized"}]
+}], {
+  AI:{async run(){
+    return {response:JSON.stringify({sentences:[{
+      id:"s-realized",
+      sentenceTranslation:"Они не осознали, что звук проходит через стену.",
+      words:[{id:"w-realized", translation:"что", matchedFragment:"что", ipa:"/ˈrɪəlaɪzd/"}]
+    }]})};
+  }},
+  GOOGLE_TRANSLATE_FETCH:async url=>{
+    assert.match(new URL(url).searchParams.get("q"), /「realized」/);
+    return new Response(JSON.stringify([[['Они не «осознали», насколько ясно звук проходит через стену.']]]), {status:200});
+  }
+});
+assert.equal(correctedPreparationResponse.status, 200);
+const correctedPreparation = await correctedPreparationResponse.json();
+assert.equal(correctedPreparation.complete, true);
+assert.equal(correctedPreparation.entries[0].translation, "осознали");
+assert.equal(correctedPreparation.entries[0].source, "google-contextual-mt");
+
 const tokenizationMismatch = await prepareText([{
   id:"s0",
   text:"We didn't re-open it.",
@@ -249,7 +292,7 @@ assert.equal(prepared.complete, true);
 assert.equal(prepared.fallbackUsed, true);
 assert.equal(prepared.entries.length, 2);
 assert.equal(prepared.entries.find(entry=>entry.id === "w1").translation, "Берег");
-assert.equal(prepared.entries.find(entry=>entry.id === "w1").matchedFragment, "");
+assert.equal(prepared.entries.find(entry=>entry.id === "w1").matchedFragment, "Берег");
 assert.equal(prepared.entries.find(entry=>entry.id === "w0").translation, "определённый артикль");
 assert.equal(prepared.entries.find(entry=>entry.id === "w0").matchedFragment, "");
 assert.equal(aiModels[9], "@cf/meta/llama-4-scout-17b-16e-instruct");

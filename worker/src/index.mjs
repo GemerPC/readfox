@@ -1,8 +1,8 @@
 const MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct";
 const FALLBACK_MODEL = "@cf/zai-org/glm-4.7-flash";
 const OPENROUTER_MODEL = "nvidia/nemotron-nano-9b-v2:free";
-const WORKER_BUILD = "2026.08.15.22";
-const PREPARATION_CACHE_VERSION = "5";
+const WORKER_BUILD = "2026.08.15.23";
+const PREPARATION_CACHE_VERSION = "6";
 const ALLOWED_ORIGINS = new Set([
   "https://gemerpc.github.io",
   "https://readfox.gemerpc.workers.dev"
@@ -199,9 +199,14 @@ function parseContextualMeaning(raw){
 }
 
 function containsExactFragment(sentence, fragment){
-  if(!sentence || !fragment) return false;
+  return Boolean(exactFragmentFromSentence(sentence, fragment));
+}
+
+function exactFragmentFromSentence(sentence, fragment){
+  if(!sentence || !fragment) return "";
   const escaped = fragment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, "iu").test(sentence);
+  const match = String(sentence).match(new RegExp(`(?:^|[^\\p{L}\\p{N}])(${escaped})(?=$|[^\\p{L}\\p{N}])`, "iu"));
+  return match ? match[1] : "";
 }
 
 const RUSSIAN_OMISSION_TOKENS = new Set([
@@ -217,6 +222,7 @@ function mayBeOmittedInRussian(token){
 function contextualMeaningMatchesSentence(contextual, word, sentence){
   if(sentence.toLocaleLowerCase("en") === word.toLocaleLowerCase("en")) return true;
   if(!contextual.translation || !contextual.sentenceTranslation) return false;
+  if(isSuspiciousPreparedFragment(word, contextual.matchedFragment || contextual.translation)) return false;
   return Boolean(contextual.matchedFragment || mayBeOmittedInRussian(word));
 }
 
@@ -438,12 +444,20 @@ function parsePreparationResponse(raw, requestedSentences, model, source = "clou
       let matchedFragment = typeof word.matchedFragment === "string" ? word.matchedFragment.trim() : "";
       let ipa = typeof word.ipa === "string" ? word.ipa.trim() : "";
       if(!translation || translation.length > 160 || !/[а-яё]/i.test(translation)) return;
-      if(matchedFragment && (
-        matchedFragment.length > 160
-        || !/[а-яё]/i.test(matchedFragment)
-        || !containsExactFragment(sentenceTranslation, matchedFragment)
-      )) matchedFragment = "";
-      if(matchedFragment) translation = matchedFragment;
+      matchedFragment = matchedFragment.length <= 160 && /[а-яё]/i.test(matchedFragment)
+        ? exactFragmentFromSentence(sentenceTranslation, matchedFragment)
+        : "";
+      if(!matchedFragment){
+        matchedFragment = exactFragmentFromSentence(sentenceTranslation, translation);
+      }
+      if(matchedFragment){
+        if(isSuspiciousPreparedFragment(requestedWord.token, matchedFragment)) return;
+        translation = matchedFragment;
+      } else {
+        const grammaticalLabel = OMITTED_WORD_LABELS[normalizedEnglishToken(requestedWord.token)] || "";
+        if(!grammaticalLabel) return;
+        translation = grammaticalLabel;
+      }
       if(ipa.length > 100 || /[а-яё]/i.test(ipa)) ipa = "";
       entries.set(id, {
         id,
@@ -639,6 +653,28 @@ const OMITTED_WORD_LABELS = {
   but:"противительный союз"
 };
 
+const ENGLISH_FUNCTION_TOKENS = new Set([
+  ...Object.keys(OMITTED_WORD_LABELS),
+  "i", "you", "he", "she", "it", "we", "they", "me", "him", "them", "us",
+  "this", "that", "these", "those", "who", "whom", "whose", "what", "which",
+  "when", "where", "why", "how", "if", "then", "than", "because", "so", "while",
+  "although", "though", "not", "no", "yes", "can", "could", "may", "might", "must",
+  "will", "would", "shall", "should", "have", "has", "had", "be", "been", "being"
+]);
+
+const RUSSIAN_FUNCTION_FRAGMENTS = new Set([
+  "а", "без", "бы", "в", "ведь", "во", "для", "до", "же", "за", "и", "из", "или",
+  "к", "как", "когда", "ли", "на", "над", "не", "ни", "но", "о", "об", "от", "по",
+  "под", "при", "про", "с", "со", "у", "чтобы", "что", "это"
+]);
+
+function isSuspiciousPreparedFragment(token, fragment){
+  const normalizedToken = normalizedEnglishToken(token);
+  if(ENGLISH_FUNCTION_TOKENS.has(normalizedToken)) return false;
+  const russianWords = String(fragment || "").toLocaleLowerCase("ru").match(/[а-яё]+(?:-[а-яё]+)*/g) || [];
+  return russianWords.length === 1 && RUSSIAN_FUNCTION_FRAGMENTS.has(russianWords[0]);
+}
+
 const ALWAYS_GRAMMATICAL_LABEL_TOKENS = new Set(["a", "an", "the"]);
 
 function markedTranslationEntry(sentence, word, translatedValue, source, model){
@@ -653,6 +689,7 @@ function markedTranslationEntry(sentence, word, translatedValue, source, model){
   const normalizedToken = normalizedEnglishToken(word.token);
   const grammaticalLabel = OMITTED_WORD_LABELS[normalizedToken] || "";
   if(ALWAYS_GRAMMATICAL_LABEL_TOKENS.has(normalizedToken)) matchedFragment = "";
+  if(matchedFragment && isSuspiciousPreparedFragment(word.token, matchedFragment)) return null;
   const translation = matchedFragment || grammaticalLabel;
   if(!translation || !sentenceTranslation || !/[а-яё]/i.test(sentenceTranslation)) return null;
   return {
