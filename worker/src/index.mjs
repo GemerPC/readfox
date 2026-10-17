@@ -4,6 +4,7 @@ import { handleDialogue } from './dialogue.mjs';
 const MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct";
 const FALLBACK_MODEL = "@cf/zai-org/glm-4.7-flash";
 const OPENROUTER_MODEL = "nvidia/nemotron-nano-9b-v2:free";
+const AI_LIMIT_MESSAGE = "Лимит ИИ временно исчерпан. Попробуйте позже.";
 const WORKER_BUILD = "2026.09.25.mobile-word-translation";
 const PREPARATION_CACHE_VERSION = "10";
 const ALLOWED_ORIGINS = new Set([
@@ -1304,7 +1305,7 @@ export default {
       }catch(error){
         console.error("ReadFox topic translation failed", error);
         const status = error.status === 429 ? 429 : error.status === 503 ? 503 : 502;
-        return json({error:status === 429 ? "Workers AI daily limit reached" : "The AI service could not translate the topic", code:error.code || "invalid-ai-response", upstreamStatus:error.status || null, build:WORKER_BUILD}, status, origin);
+        return json({error:status === 429 ? AI_LIMIT_MESSAGE : "The AI service could not translate the topic", code:status === 429 ? "ai-limit" : error.code || "invalid-ai-response", upstreamStatus:error.status || null, build:WORKER_BUILD}, status, origin);
       }
     }
 
@@ -1336,8 +1337,8 @@ export default {
         console.error("ReadFox text preparation failed", error);
         const status = error.status === 429 ? 429 : error.status === 503 ? 503 : 502;
         return json({
-          error:status === 429 ? "Workers AI daily limit reached" : "The AI service could not prepare the reading text",
-          code:error.code || "invalid-ai-response",
+          error:status === 429 ? AI_LIMIT_MESSAGE : "The AI service could not prepare the reading text",
+          code:status === 429 ? "ai-limit" : error.code || "invalid-ai-response",
           upstreamStatus:error.status || null,
           build:WORKER_BUILD
         }, status, origin);
@@ -1453,7 +1454,7 @@ export default {
       }catch(error){
         console.error("ReadFox contextual translation failed", error);
         const status = error.status === 429 ? 429 : error.status === 503 ? 503 : 502;
-        return json({error:status === 429 ? "Workers AI daily limit reached" : "The AI service could not translate the word in context", code:error.code || "invalid-ai-response", upstreamStatus:error.status || null, build:WORKER_BUILD}, status, origin);
+        return json({error:status === 429 ? AI_LIMIT_MESSAGE : "The AI service could not translate the word in context", code:status === 429 ? "ai-limit" : error.code || "invalid-ai-response", upstreamStatus:error.status || null, build:WORKER_BUILD}, status, origin);
       }
     }
 
@@ -1503,7 +1504,7 @@ export default {
     }catch(error){
       console.error("ReadFox generation failed", error);
       const status = error.status === 429 ? 429 : error.status === 503 ? 503 : 502;
-      return json({error:status === 429 ? "Workers AI daily limit reached" : "The AI service could not generate a text", code:error.code || "invalid-ai-response", upstreamStatus:error.status || null, build:WORKER_BUILD}, status, origin);
+      return json({error:status === 429 ? AI_LIMIT_MESSAGE : "The AI service could not generate a text", code:status === 429 ? "ai-limit" : error.code || "invalid-ai-response", upstreamStatus:error.status || null, build:WORKER_BUILD}, status, origin);
     }
   }
 };

@@ -1479,6 +1479,20 @@ const TEXT_GENERATOR_PROFILES = [
 ];
 
 
+const AI_LIMIT_MESSAGE = "Лимит ИИ временно исчерпан. Попробуйте позже.";
+let aiLimitHitAt = 0;
+function aiRequestError(response, data, fallback){
+  const limited = response.status === 429;
+  if(limited) aiLimitHitAt = Date.now();
+  const error = new Error(limited ? AI_LIMIT_MESSAGE : data && data.error ? data.error : fallback);
+  if(limited) error.code = "ai-limit";
+  else if(data && data.code) error.code = data.code;
+  return error;
+}
+function aiTranslationErrorText(){
+  return Date.now() - aiLimitHitAt < 60000 ? AI_LIMIT_MESSAGE : "Не удалось получить AI-перевод.";
+}
+
 function aiGeneratorEndpoint(){
   const configured = window.READFOX_CONFIG && window.READFOX_CONFIG.aiGeneratorEndpoint;
   return typeof configured === "string" ? configured.trim() : "";
@@ -1538,7 +1552,7 @@ async function translateGeneratorTopicWithAi(topic){
   let data = null;
   try{ data = await response.json(); }catch(e){ /* handled below */ }
   if(!response.ok){
-    throw new Error(data && data.error ? data.error : `Translation request failed: ${response.status}`);
+    throw aiRequestError(response, data, `Translation request failed: ${response.status}`);
   }
   const translated = data && typeof data.translatedTopic === "string"
     ? data.translatedTopic.trim().replace(/[.!?]+$/g, "")
@@ -1637,7 +1651,7 @@ async function generateAiStudyText(topic, level, options = {}){
   let data = null;
   try{ data = await response.json(); }catch(e){ /* ниже покажем общую ошибку */ }
   if(!response.ok){
-    throw new Error(data && data.error ? data.error : `AI request failed: ${response.status}`);
+    throw aiRequestError(response, data, `AI request failed: ${response.status}`);
   }
   const title = data && typeof data.title === "string" ? data.title.trim() : "";
   const body = data && typeof data.body === "string" ? data.body.trim() : "";
@@ -1876,7 +1890,9 @@ function toggleCustomForm(forceOpen = false){
       button.textContent = "Создать ещё";
       document.getElementById("generatedPreview").scrollIntoView({behavior:"smooth", block:"nearest"});
     }catch(e){
-      status.textContent = e && e.code === "topic-translation"
+      status.textContent = e && e.code === "ai-limit"
+        ? AI_LIMIT_MESSAGE
+        : e && e.code === "topic-translation"
         ? "Не удалось перевести тему на английский. Попробуйте сформулировать её короче."
         : requestMode === "words"
           ? "ИИ не смог создать текст по словам. Попробуйте выбрать меньше слов."
@@ -2178,7 +2194,7 @@ async function fetchReaderPreparationChunk(sentences, itemById, strategy){
   let data = null;
   try{ data = await response.json(); }catch(e){ /* обработаем как ошибку ниже */ }
   if(!response.ok){
-    throw new Error(data && data.error ? data.error : `AI request failed: ${response.status}`);
+    throw aiRequestError(response, data, `AI request failed: ${response.status}`);
   }
   const entries = data && Array.isArray(data.entries) ? data.entries : [];
   entries.forEach(entry=>{
@@ -2992,6 +3008,7 @@ async function fetchContextualWordTranslation(word, sentence){
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({word, sentence})
     });
+    if(response.status === 429) aiLimitHitAt = Date.now();
     if(response.ok){
       const data = await response.json();
       const translated = data && typeof data.translation === "string" ? data.translation.trim() : "";
@@ -3170,7 +3187,7 @@ function showTooltip(el, token, forcedSentence){ if(LOCAL_ONLY) return showLocal
       inner += `<div class="tt-translation">${escapeHtml(view.info.translation)}</div>`;
       inner += `<div class="tt-source">переведено с помощью AI${sentence ? " по контексту" : ""}</div>`;
     } else if(translationFailed){
-      inner += `<div class="tt-translation error">Не удалось получить AI-перевод.</div>
+      inner += `<div class="tt-translation error">${aiTranslationErrorText()}</div>
         <div class="tt-actions tt-retry-actions"><button class="primary" id="ttRetryTranslation">Повторить</button></div>`;
     }
     const freq = frequencyInfo(view.info.key);
@@ -3347,7 +3364,7 @@ function showPhraseTooltip(range, text, sentence){ if(LOCAL_ONLY) return showLoc
     if(translationStatus === "loading"){
       inner += `<div class="tt-translation loading">AI переводит фразу…</div>`;
     } else if(translationStatus === "failed"){
-      inner += `<div class="tt-translation error">Не удалось получить AI-перевод.</div>
+      inner += `<div class="tt-translation error">${aiTranslationErrorText()}</div>
         <div class="tt-actions tt-retry-actions"><button class="primary" id="ttPhraseRetry">Повторить</button></div>`;
     } else {
       inner += `<div class="tt-translation">${escapeHtml(translation)}</div>
@@ -3699,7 +3716,7 @@ function renderFlashcards(){
             <div class="fc-side-label">🇷🇺 Русский</div>
             <div class="fc-word-ru${item.translation ? "" : " loading"}" id="fcWordRu">${escapeHtml(item.translation || "AI переводит…")}</div>
             <div class="fc-ai-error hidden" id="fcAiError">
-              <span>Не удалось получить AI-перевод.</span>
+              <span id="fcAiErrorText">Не удалось получить AI-перевод.</span>
               <button type="button" id="fcRetryTranslation">Повторить</button>
             </div>
             ${item.example
@@ -3801,7 +3818,11 @@ function renderFlashcards(){
           backEl.textContent = "";
           backEl.classList.remove("loading");
         }
-        if(errorEl) errorEl.classList.remove("hidden");
+        if(errorEl){
+          const errorText = document.getElementById("fcAiErrorText");
+          if(errorText) errorText.textContent = aiTranslationErrorText();
+          errorEl.classList.remove("hidden");
+        }
         return;
       }
       item.translation = contextual.translation;
