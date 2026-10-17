@@ -6,8 +6,23 @@
     "binding": "AI"
   },
   "assets": {
-    "directory": "./",
+    "directory": "./.cloudflare-public",
     "binding": "ASSETS",
-    "run_worker_first": ["/generate", "/translate", "/translate-word", "/prepare-text"]
-  }
+    "run_worker_first": [
+      "/generate",
+      "/translate",
+      "/translate-word",
+      "/translate-word-simple",
+      "/prepare-text",
+      "/pronunciation",
+      "/dialogue",
+      "/speech",
+      "/academy"
+    ]
+  },
+  "build": {
+    "command": "node build-cloudflare.mjs"
+  },
+  "keep_vars": true
 }
+

@@ -1,12 +1,13 @@
 (function(){
 "use strict";
 
+const LOCAL_ONLY = !!window.READFOX_CONFIG?.localOnly;
 const SOUND_ICON = '<svg class="sound-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M16 9.5a4 4 0 0 1 0 5M18.5 7a7.5 7.5 0 0 1 0 10"/></svg>';
 
 /* ============================================================
    ДАННЫЕ: тексты для чтения
    ============================================================ */
-const TEXTS = [
+const LEGACY_TEXTS = [
   {
     id:'morning', level:'beginner', title:'Моё утро',
     teaser:'Простой рассказ о ежедневном утреннем распорядке — хороший текст для начала.',
@@ -161,6 +162,7 @@ The traveler thanked her with tears of relief, offering whatever he could give i
   }
 ];
 
+const TEXTS = [...(window.READFOX_LIBRARY||[]), ...LEGACY_TEXTS];
 const LEVEL_LABEL = {beginner:'Начальный', intermediate:'B1 · Средний', advanced:'Продвинутый', custom:'Свой текст'};
 const LEVEL_SHORT = {beginner:'нач', intermediate:'B1', advanced:'прод', custom:'свой'};
 const LEVEL_DOTS = {beginner:1, intermediate:2, advanced:3, custom:0};
@@ -517,14 +519,55 @@ function frequencyInfo(key){
    СОСТОЯНИЕ И ХРАНИЛИЩЕ
    ============================================================ */
 const STORAGE_KEY = "readfox-state";
+const VIEW_SESSION_KEY = "readfox-view-session";
 const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 const REVIEW_INTERVALS = [0, 20 * MINUTE_MS, DAY_MS, 3 * DAY_MS, 7 * DAY_MS, 14 * DAY_MS, 30 * DAY_MS];
 const MAX_CUSTOM_TEXTS = 40;
-const BACKUP_VERSION = 2;
-const DEFAULT_SETTINGS = {voiceName:null, fontSize:19, theme:"dark"};
-let state = { userWords:{}, customTexts:[], readTextIds:[], archivedTextIds:[], settings:{...DEFAULT_SETTINGS} };
+const MAX_READER_CACHES = 16;
+// Version 3 invalidates translations prepared before word-by-word alignment.
+// Older batches could occasionally attach a neighbouring Russian fragment to
+// the selected English word when a translator reordered several markers.
+const READER_CACHE_VERSION = 3;
+const CONTEXT_TRANSLATION_VERSION = 3;
+const BACKUP_VERSION = 5;
+const DEFAULT_SETTINGS = {voiceName:null, fontSize:19, theme:"light"};
+const CACHE_ENGLISH_FUNCTION_WORDS = new Set([
+  "a", "an", "the", "am", "is", "are", "was", "were", "be", "been", "being",
+  "do", "does", "did", "have", "has", "had", "will", "would", "shall", "should",
+  "can", "could", "may", "might", "must", "i", "you", "he", "she", "it", "we",
+  "they", "me", "him", "her", "them", "us", "my", "your", "his", "its", "our",
+  "their", "mine", "yours", "hers", "ours", "theirs", "someone", "somebody", "anyone",
+  "anybody", "everyone", "everybody", "nobody", "nothing", "something", "anything",
+  "everything", "this", "that", "these", "those", "who", "whom", "whose", "what", "which",
+  "when", "where", "why", "how", "if", "then", "than", "because", "so", "while",
+  "although", "though", "not", "no", "yes", "and", "or", "but", "of", "to", "in",
+  "on", "at", "for", "from", "with", "by", "as"
+]);
+const CACHE_RUSSIAN_GRAMMATICAL_WORDS = new Set([
+  "а", "без", "бы", "в", "ведь", "во", "для", "до", "же", "за", "и", "из", "или",
+  "к", "как", "когда", "ли", "на", "над", "не", "ни", "но", "о", "об", "от", "по",
+  "под", "при", "про", "с", "со", "у", "чтобы", "что", "это", "я", "меня", "мне",
+  "мной", "мною", "ты", "тебя", "тебе", "тобой", "он", "его", "ему", "им", "она",
+  "ее", "её", "ей", "ею", "оно", "мы", "нас", "нам", "нами", "вы", "вас", "вам",
+  "вами", "они", "их", "ими", "себя", "себе", "собой"
+]);
+const CACHE_RUSSIAN_PERSONAL_PRONOUNS = new Set([
+  "я", "меня", "мне", "мной", "мною", "ты", "тебя", "тебе", "тобой", "он", "его",
+  "ему", "им", "она", "ее", "её", "ей", "ею", "оно", "мы", "нас", "нам", "нами",
+  "вы", "вас", "вам", "вами", "они", "их", "ими", "себя", "себе", "собой"
+]);
+let state = {
+  userWords:{},
+  customTexts:[],
+  readTextIds:[],
+  archivedTextIds:[],
+  readerCaches:{},
+  contextTranslationVersion:CONTEXT_TRANSLATION_VERSION,
+  settings:{...DEFAULT_SETTINGS}
+};
 let currentText = null;
+let activeView = "home";
 let currentFilter = "all";
 let libraryView = "active";
 let practiceQueue = [];
@@ -542,6 +585,7 @@ let readerPreparationSerial = 0;
 let readerPreparation = {
   textId:null,
   status:"idle",
+  cached:0,
   phase:"translations",
   total:0,
   completed:0,
@@ -576,14 +620,89 @@ function normalizeReviewState(word){
   }
 }
 
+function migrateAiContextTranslations(words, savedVersion){
+  if(Number(savedVersion) >= CONTEXT_TRANSLATION_VERSION) return;
+  Object.values(words || {}).forEach(word=>{
+    if(!word || typeof word !== "object") return;
+    if(word.translationSource === "ai") word.translation = "";
+    word.contextTranslations = {};
+    word.contextSentenceTranslations = {};
+    word.contextMatchedFragments = {};
+  });
+}
+
 function normalizeSettings(settings){
   const source = settings && typeof settings === "object" ? settings : {};
   const fontSize = Number(source.fontSize);
   return {
     voiceName:typeof source.voiceName === "string" ? source.voiceName : null,
     fontSize:Number.isFinite(fontSize) ? Math.max(15, Math.min(30, fontSize)) : DEFAULT_SETTINGS.fontSize,
-    theme:source.theme === "light" ? "light" : "dark"
+    theme:source.theme === "dark" ? "dark" : "light"
   };
+}
+
+function readerTextFingerprint(text){
+  const source = String(text && text.body || "");
+  let hash = 2166136261;
+  for(let index=0; index<source.length; index++){
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${source.length}:${(hash >>> 0).toString(36)}`;
+}
+
+function isSuspiciousContextualFragment(english, russian){
+  const englishKey = String(english || "").trim().toLocaleLowerCase("en").replace(/’/g, "'");
+  if(CACHE_ENGLISH_FUNCTION_WORDS.has(englishKey)) return false;
+  const englishWords = englishKey.match(/[a-z]+(?:'[a-z]+)*/g) || [];
+  const russianWords = String(russian || "").toLocaleLowerCase("ru").match(/[а-яё]+(?:-[а-яё]+)*/g) || [];
+  return englishWords.length === 1 && (
+    (russianWords.length === 1 && CACHE_RUSSIAN_GRAMMATICAL_WORDS.has(russianWords[0]))
+    || CACHE_RUSSIAN_PERSONAL_PRONOUNS.has(russianWords[0])
+  );
+}
+
+function normalizeReaderCaches(caches, validIds = null){
+  if(!caches || typeof caches !== "object" || Array.isArray(caches)) return {};
+  const normalized = {};
+  Object.entries(caches)
+    .sort((a, b)=>(Number(b[1] && b[1].updatedAt) || 0) - (Number(a[1] && a[1].updatedAt) || 0))
+    .slice(0, MAX_READER_CACHES)
+    .forEach(([textId, cache])=>{
+      if(typeof textId !== "string" || !textId || textId.length > 200 || (validIds && !validIds.has(textId))) return;
+      if(!cache || typeof cache !== "object" || cache.version !== READER_CACHE_VERSION) return;
+      if(typeof cache.fingerprint !== "string" || !Array.isArray(cache.sentences)) return;
+      const sentences = [];
+      cache.sentences.slice(0, 400).forEach(sentence=>{
+        if(!sentence || typeof sentence !== "object") return;
+        const source = typeof sentence.source === "string" ? sentence.source.trim().slice(0, 2000) : "";
+        const translation = typeof sentence.translation === "string" ? sentence.translation.trim().slice(0, 3000) : "";
+        if(!source || !translation || !sentence.words || typeof sentence.words !== "object" || Array.isArray(sentence.words)) return;
+        const words = {};
+        Object.entries(sentence.words).slice(0, 300).forEach(([wordKey, word])=>{
+          if(!word || typeof word !== "object") return;
+          const original = typeof word.word === "string" ? word.word.trim().slice(0, 240) : "";
+          const wordTranslation = typeof word.translation === "string" ? word.translation.trim().slice(0, 500) : "";
+          if(!original || !wordTranslation || isSuspiciousContextualFragment(original, wordTranslation)) return;
+          words[String(wordKey).slice(0, 260)] = {
+            word:original,
+            translation:wordTranslation,
+            matchedFragment:typeof word.matchedFragment === "string" ? word.matchedFragment.trim().slice(0, 500) : "",
+            ipa:typeof word.ipa === "string" ? word.ipa.trim().slice(0, 120) : ""
+          };
+        });
+        if(Object.keys(words).length) sentences.push({source, translation, words});
+      });
+      if(sentences.length){
+        normalized[textId] = {
+          version:READER_CACHE_VERSION,
+          fingerprint:cache.fingerprint.slice(0, 100),
+          updatedAt:Number.isFinite(cache.updatedAt) ? cache.updatedAt : Date.now(),
+          sentences
+        };
+      }
+    });
+  return normalized;
 }
 
 function isReviewDue(word, now = Date.now()){
@@ -661,12 +780,16 @@ async function loadState(){
     if(raw){
       const parsed = JSON.parse(raw);
       state.userWords = parsed.userWords || {};
+      migrateAiContextTranslations(state.userWords, parsed.contextTranslationVersion);
+      state.contextTranslationVersion = CONTEXT_TRANSLATION_VERSION;
       state.customTexts = parsed.customTexts || [];
       state.readTextIds = parsed.readTextIds || [];
       state.archivedTextIds = Array.isArray(parsed.archivedTextIds) ? parsed.archivedTextIds : [];
+      state.readerCaches = normalizeReaderCaches(parsed.readerCaches);
       state.settings = normalizeSettings(parsed.settings);
       Object.values(state.userWords).forEach(normalizeReviewState);
       cleanArchivedTextIds();
+      cleanReaderCaches();
     }
   }catch(e){
     // ключа пока нет или хранилище недоступно — используем значения по умолчанию
@@ -764,6 +887,8 @@ function exportData(){
     version:BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     app: "ReadFox",
+    journey:window.ReadFoxAcademy?.exportState() || null,
+    dialogue:window.ReadFoxDialogue?.exportState?.() || null,
     state
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
@@ -782,7 +907,7 @@ function exportData(){
 function stateFromBackup(data){
   if(!data || typeof data !== "object") throw new Error("Invalid backup");
   const source = data.state && typeof data.state === "object" ? data.state : data;
-  const recognized = ["userWords", "customTexts", "readTextIds", "archivedTextIds", "settings"]
+  const recognized = ["userWords", "customTexts", "readTextIds", "archivedTextIds", "readerCaches", "settings"]
     .some(key=>Object.prototype.hasOwnProperty.call(source, key));
   if(!recognized) throw new Error("Unknown backup format");
 
@@ -794,6 +919,7 @@ function stateFromBackup(data){
       normalizeReviewState(userWords[key]);
     });
   }
+  migrateAiContextTranslations(userWords, source.contextTranslationVersion);
 
   const customTexts = Array.isArray(source.customTexts)
     ? source.customTexts.filter(text=>text && typeof text.id === "string" && typeof text.body === "string").slice(0, MAX_CUSTOM_TEXTS)
@@ -811,6 +937,8 @@ function stateFromBackup(data){
     customTexts,
     readTextIds,
     archivedTextIds,
+    readerCaches:normalizeReaderCaches(source.readerCaches, validIds),
+    contextTranslationVersion:CONTEXT_TRANSLATION_VERSION,
     settings:normalizeSettings(source.settings)
   };
 }
@@ -819,7 +947,7 @@ async function importDataFromFile(file){
   try{
     const text = await file.text();
     const data = JSON.parse(text);
-    state = stateFromBackup(data);
+    state = stateFromBackup(data); if(data.journey) window.ReadFoxAcademy?.importState(data.journey); if(data.dialogue) window.ReadFoxDialogue?.importState?.(data.dialogue);
     currentText = null;
     currentFilter = "all";
     libraryView = "active";
@@ -872,7 +1000,7 @@ function candidatesFor(w){
   return out;
 }
 
-function lookupWord(token){
+function lookupWord(token){ const localTranslation=window.ReadFoxLibrary?.word(token); if(localTranslation) return {key:token.toLowerCase(),translation:localTranslation};
   const w = token.toLowerCase();
   if(state.userWords[w]) return {key:w, translation:state.userWords[w].translation};
   if(BASE_DICT.hasOwnProperty(w)) return {key:w, translation:BASE_DICT[w]};
@@ -970,16 +1098,73 @@ function wordCount(text){
 /* ============================================================
    ВИДЫ (VIEWS) И НАВИГАЦИЯ
    ============================================================ */
+function persistViewSession(){
+  try{
+    sessionStorage.setItem(VIEW_SESSION_KEY, JSON.stringify({
+      view:activeView,
+      textId:activeView === "reader" && currentText ? currentText.id : null,
+      scrollY:Math.max(0, Math.round(window.scrollY || 0)),
+      updatedAt:Date.now()
+    }));
+  }catch(e){ /* sessionStorage может быть закрыт настройками приватности */ }
+}
+
+function savedViewSession(){
+  try{
+    const saved = JSON.parse(sessionStorage.getItem(VIEW_SESSION_KEY) || "null");
+    if(!saved || typeof saved !== "object") return null;
+    if(!Number.isFinite(saved.updatedAt) || Date.now() - saved.updatedAt > 7 * DAY_MS) return null;
+    return saved;
+  }catch(e){
+    return null;
+  }
+}
+
+function restoreViewSession(){
+  const saved = savedViewSession();
+  if(!saved) return false;
+  const scrollY = Number.isFinite(saved.scrollY) ? Math.max(0, saved.scrollY) : 0;
+  if(saved.view === "reader" && typeof saved.textId === "string"){
+    const text = allTexts().find(item=>item.id === saved.textId);
+    if(!text) return false;
+    openText(text);
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      window.scrollTo({top:scrollY, behavior:"auto"});
+      persistViewSession();
+    }));
+    return true;
+  }
+  if(saved.view === "dictionary"){
+    showView("dictionary");
+    renderDictionary();
+  } else if(saved.view === "practice"){
+    showView("practice");
+    resetPracticeSession();
+  } else {
+    return false;
+  }
+  requestAnimationFrame(()=>{
+    window.scrollTo({top:scrollY, behavior:"auto"});
+    persistViewSession();
+  });
+  return true;
+}
+
 function showView(name){
+  if(!document.querySelector('.view[data-view="'+name+'"]')) name = "home";
+  if(name !== "practice" && practiceKeyHandler){ document.removeEventListener("keydown", practiceKeyHandler); practiceKeyHandler = null; }
+  closeSettingsPanel();
   document.querySelectorAll(".view").forEach(v=>v.classList.add("hidden"));
   const target = document.querySelector(`.view[data-view="${name}"]`);
   if(target) target.classList.remove("hidden");
+  activeView = target ? name : "home"; window.dispatchEvent(new CustomEvent("readfox:view", {detail:{view:activeView}}));
   document.querySelectorAll(".nav button[data-view]").forEach(b=>{
-    b.classList.toggle("active", b.dataset.view===name);
+    b.classList.toggle("active", b.dataset.view===name); b.setAttribute("aria-current", b.dataset.view===name ? "page" : "false");
   });
   hideTooltip();
   stopReading();
   window.scrollTo({top:0, behavior:"auto"});
+  persistViewSession();
 }
 
 /* ============================================================
@@ -993,7 +1178,7 @@ function updateStatsUI(){
   document.getElementById("statKnown").textContent = known;
   document.getElementById("statLearningCount").textContent = learning;
   document.getElementById("statKnownCount").textContent = known;
-  document.getElementById("statTextsCount").textContent = state.readTextIds.length;
+  document.getElementById("statTextsCount").textContent = state.readTextIds.length; window.dispatchEvent(new Event("readfox:change"));
 }
 
 function allTexts(){
@@ -1002,6 +1187,10 @@ function allTexts(){
 function cleanArchivedTextIds(){
   const validIds = new Set(allTexts().map(text=>text.id));
   state.archivedTextIds = [...new Set(state.archivedTextIds)].filter(id=>validIds.has(id));
+}
+function cleanReaderCaches(){
+  const validIds = new Set(allTexts().map(text=>text.id));
+  state.readerCaches = normalizeReaderCaches(state.readerCaches, validIds);
 }
 function levelDotsHtml(level){
   const n = LEVEL_DOTS[level] || 0;
@@ -1020,8 +1209,8 @@ function renderLibrary(){
     if(showingMine || archivedIds.has(t.id) !== showingArchive) return;
     visibleCount++;
     html += `
-    <div class="text-card" data-id="${t.id}" data-kind="built-in" tabindex="0" aria-label="Открыть текст ${escapeHtml(t.title)}">
-      <div class="level">${levelDotsHtml(t.level)}<span>${LEVEL_LABEL[t.level]}</span></div>
+    <div class="text-card" data-id="${t.id}" data-kind="built-in" data-cefr="${t.cefr || (t.level === "beginner" ? "A1" : t.level === "advanced" ? "B2" : "B1")}" tabindex="0" aria-label="Открыть текст ${escapeHtml(t.title)}">
+      <div class="level">${levelDotsHtml(t.level)}<span>${t.cefr || LEVEL_LABEL[t.level]}${t.pairs ? " · с переводом" : ""}</span></div>
       <h3>${escapeHtml(t.title)}</h3>
       <p class="teaser">${escapeHtml(t.teaser)}</p>
       <div class="row">
@@ -1067,7 +1256,7 @@ function renderLibrary(){
   } else if(!showingArchive && !showingMine && visibleCount === 0){
     html = `<div class="empty-state library-empty">Все тексты прочитаны. Они находятся в архиве.</div>`;
   }
-  grid.innerHTML = html;
+  grid.innerHTML = html; window.dispatchEvent(new Event("readfox:library-render"));
   document.getElementById("archiveCount").textContent = state.archivedTextIds.length;
   document.getElementById("myTextsCount").textContent =
     state.customTexts.filter(text=>!archivedIds.has(text.id)).length;
@@ -1111,6 +1300,7 @@ function renderLibrary(){
       state.customTexts = state.customTexts.filter(x=>x.id!==id);
       state.readTextIds = state.readTextIds.filter(textId=>textId!==id);
       state.archivedTextIds = state.archivedTextIds.filter(textId=>textId!==id);
+      if(state.readerCaches) delete state.readerCaches[id];
       renderLibrary();
       updateStatsUI();
       const ok = await saveStateNow();
@@ -1340,7 +1530,7 @@ function generatorChoice(items, seed, offset){
 async function translateGeneratorTopicWithAi(topic){
   const endpoint = aiTranslatorEndpoint();
   if(!endpoint) throw new Error("AI translation endpoint is not configured");
-  const response = await fetchWithTimeout(endpoint, 30000, {
+  const response = await fetchWithTimeout(endpoint, 45000, {
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({topic})
@@ -1750,6 +1940,7 @@ function openText(text){
   readerPreparation = {
     textId:text.id,
     status:"loading",
+    cached:0,
     phase:"translations",
     total:0,
     completed:0,
@@ -1766,6 +1957,8 @@ function openText(text){
   document.getElementById("navReader").textContent = "Чтение";
   document.getElementById("readerTitle").textContent = text.title;
   renderReaderContent();
+  readerPreparation.cached = hydrateReaderCache(text);
+  readerPreparation.completed = readerPreparation.cached;
   updateArchiveButton();
   updateStatsUI();
   showView("reader");
@@ -1795,7 +1988,7 @@ async function toggleCurrentTextArchive(){
     renderLibrary();
     await saveStateNow();
     showToast("Текст добавлен в архив");
-    showView("home");
+    showView("library");
     document.getElementById("libraryGrid").scrollIntoView({block:"start"});
   }
 }
@@ -1826,7 +2019,7 @@ function syncReaderInteractionState(){
   if(!body) return;
   const finished = !!currentText
     && readerPreparation.textId === currentText.id
-    && (readerPreparation.status === "ready" || readerPreparation.status === "error");
+    && (readerPreparation.status === "ready" || readerPreparation.status === "error" || readerPreparation.cached > 0);
   body.classList.toggle("is-preparing", !finished);
   body.setAttribute("aria-busy", String(!finished));
   body.querySelectorAll(".word").forEach(word=>{
@@ -1867,8 +2060,10 @@ function updateReaderPreparationStatus(){
     if(readerPreparation.missing > 0){
       status.classList.add("is-partial");
       message.textContent = `Текст готов. Без перевода: ${readerPreparation.missing}`;
-      count.textContent = total ? `${readerPreparation.completed} из ${total}` : "";
-      bar.style.width = Math.max(4, percent) + "%";
+      count.textContent = readerPreparation.total ? `${readerPreparation.completed} из ${readerPreparation.total}` : "";
+      bar.style.width = readerPreparation.total
+        ? Math.max(4, Math.round(readerPreparation.completed / readerPreparation.total * 100)) + "%"
+        : "100%";
       readerReadyStatusTimer = setTimeout(()=>status.classList.add("hidden"), 2600);
     } else {
       message.textContent = "Текст готов";
@@ -1995,6 +2190,7 @@ async function fetchReaderPreparationChunk(sentences, itemById, strategy){
     const ipa = typeof entry.ipa === "string" ? entry.ipa.trim() : "";
     if(!translation || !/[а-яё]/i.test(translation) || !sentenceTranslation || !/[а-яё]/i.test(sentenceTranslation)) return;
     if(matchedFragment && !containsExactRussianFragment(sentenceTranslation, matchedFragment)) matchedFragment = "";
+    if(isSuspiciousContextualFragment(item.token, matchedFragment || translation)) return;
     cacheContextualTranslation(item.token, item.sentence, {
       translation:matchedFragment || translation,
       sentenceTranslation,
@@ -2022,6 +2218,7 @@ async function runReaderPreparationPass(items, runId, strategy){
         console.error("ReadFox text preparation chunk failed", error);
       }
       if(runId !== readerPreparationSerial) return;
+      persistReaderCacheItems(currentText, items);
       const stillMissingInPass = items.filter(item=>!cachedContextualTranslation(item.token, item.sentence)).length;
       readerPreparation.completed = Math.max(readerPreparation.completed, readerPreparation.total - stillMissingInPass);
       updateReaderPreparationStatus();
@@ -2060,7 +2257,7 @@ async function prefetchReaderTranscriptions(items, runId){
   await Promise.all(Array.from({length:Math.min(concurrency, jobs.length)}, ()=>worker()));
 }
 
-async function prepareReaderText(text, runId){
+async function prepareReaderText(text, runId){ if(LOCAL_ONLY){ readerPreparation.status="ready"; document.getElementById("readerPrepStatus").classList.add("hidden"); syncReaderInteractionState(); return; }
   try{
     const items = collectReaderPreparationItems();
     if(runId !== readerPreparationSerial || currentText !== text) return;
@@ -2092,6 +2289,7 @@ async function prepareReaderText(text, runId){
     readerPreparation.missing = missing.length;
     await prefetchReaderTranscriptions(items, runId);
     if(runId !== readerPreparationSerial || currentText !== text) return;
+    persistReaderCacheItems(text, items);
     readerPreparation.status = "ready";
     readerPreparation.error = "";
   }catch(error){
@@ -2111,6 +2309,7 @@ function retryReaderPreparation(){
   readerPreparation = {
     textId:currentText.id,
     status:"loading",
+    cached:readerPreparation.cached || 0,
     phase:"translations",
     total:readerPreparation.total || 0,
     completed:readerPreparation.completed || 0,
@@ -2126,8 +2325,15 @@ function retryReaderPreparation(){
 /* ============================================================
    ПОДСКАЗКА (TOOLTIP) ПРИ КЛИКЕ НА СЛОВО
    ============================================================ */
+let localTooltipCleanup = null;
 function hideTooltip(){
-  document.getElementById("tooltipLayer").innerHTML = "";
+  tooltipRequestId++;
+  if(localTooltipCleanup){localTooltipCleanup();localTooltipCleanup=null;}
+  const layer=document.getElementById("tooltipLayer");
+  layer.classList.remove("mobile-word-tooltip");
+  document.querySelector(".sidebar")?.classList.remove("mobile-nav-hidden");
+  layer.onclick=null;
+  layer.innerHTML = "";
 }
 function refreshWordVisuals(){
   if(currentText) renderReaderContent();
@@ -2160,7 +2366,7 @@ function addWord(key, translation, status, example, contextDetails = null){
     contextTranslations,
     contextSentenceTranslations,
     contextMatchedFragments,
-    translationSource: contextDetails && contextDetails.source === "ai" ? "ai" : (prev && prev.translationSource) || "manual",
+    translationSource: contextDetails && contextDetails.source === "ai" ? "ai" : contextDetails && contextDetails.source === "manual" ? "manual" : (prev && prev.translationSource) || "manual",
     type: "word",
     source: BASE_DICT.hasOwnProperty(key) ? "built-in" : "custom"
   };
@@ -2276,6 +2482,7 @@ function applyVoice(utterance){
 }
 
 function speak(text){
+  stopWordAudio();
   try{
     if(!text || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
@@ -2292,45 +2499,124 @@ function clearSpeakingHighlight(){
   if(prev) prev.classList.remove("word-speaking");
 }
 function resetReadAloudButton(){
+  readingGeneration++;
+  cancelReaderFollow();
   const btn = document.getElementById("readAloudBtn");
   if(btn){ btn.innerHTML = SOUND_ICON + " Слушать текст"; btn.dataset.playing = "0"; }
   const stopBtn = document.getElementById("floatingStopBtn");
   if(stopBtn) stopBtn.classList.add("hidden");
   clearSpeakingHighlight();
 }
+
+let activeWordAudio=null,wordAudioGeneration=0;
+function stopWordAudio(){
+  wordAudioGeneration++;
+  const audio=activeWordAudio;activeWordAudio=null;if(!audio)return;
+  audio.onended=audio.onerror=null;
+  try{audio.pause();audio.srcObject=null;audio.removeAttribute("src");audio.load();}catch(_){}
+  window.ReadFoxAudioLifecycle?.log('[WORD_AUDIO_RELEASED]',{hasSrcObject:!!audio.srcObject,paused:audio.paused});
+}
 function playAudioUrl(url, fallbackText){
+  stopReading();const token=++wordAudioGeneration;
   try{
-    window.speechSynthesis.cancel();
-    resetReadAloudButton();
-    const audio = new Audio(url);
-    const useFallback = ()=>{ if(fallbackText) speak(fallbackText); };
-    audio.addEventListener("error", useFallback);
-    audio.play().catch(useFallback);
-  }catch(e){
-    if(fallbackText) speak(fallbackText);
-  }
+    const audio=new Audio(url);activeWordAudio=audio;
+    const current=()=>activeWordAudio===audio&&token===wordAudioGeneration&&!document.hidden;
+    const useFallback=()=>{if(!current())return;stopWordAudio();if(fallbackText)speak(fallbackText);};
+    audio.onerror=useFallback;
+    audio.onended=()=>{if(current())stopWordAudio();};
+    Promise.resolve(audio.play()).catch(useFallback);
+  }catch(_){if(token===wordAudioGeneration&&fallbackText)speak(fallbackText);}
 }
 function stopReading(){
+  stopWordAudio();
   try{ if("speechSynthesis" in window) window.speechSynthesis.cancel(); }catch(e){}
   resetReadAloudButton();
 }
 
-// Отличаем прокрутку, которую вызвали мы сами для подсветки читаемого слова,
-// от ручной прокрутки пользователя и ненадолго уступаем ей приоритет.
-let lastProgrammaticScrollAt = 0;
+window.ReadFoxPlayback=Object.freeze({stop:stopReading});
+window.addEventListener('pagehide',stopReading);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopReading();});
+
+let readingGeneration = 0;
+let readerScrollFrame = 0;
+let readerResumeTimer = null;
 let userScrollSuspendUntil = 0;
-window.addEventListener("scroll", ()=>{
-  if(Date.now() - lastProgrammaticScrollAt < 700) return; // это была наша прокрутка
-  userScrollSuspendUntil = Date.now() + 4000;
-}, {passive:true});
+
+function cancelReaderFollow(){
+  cancelAnimationFrame(readerScrollFrame);
+  readerScrollFrame = 0;
+  document.documentElement.classList.remove("reader-follow-scroll");
+  clearTimeout(readerResumeTimer);
+}
+
+function suspendReaderFollow(event){
+  if(event.type === "keydown" && !["ArrowUp","ArrowDown","PageUp","PageDown","Home","End"," "].includes(event.key)) return;
+  if(document.getElementById("readAloudBtn")?.dataset.playing !== "1") return;
+  cancelReaderFollow();
+  userScrollSuspendUntil = Date.now() + 2500;
+  readerResumeTimer = setTimeout(()=>{
+    followReadingWord(document.querySelector("#readerBody .word-speaking"));
+  }, 2600);
+}
+window.addEventListener("touchmove", suspendReaderFollow, {passive:true});
+window.addEventListener("wheel", suspendReaderFollow, {passive:true});
+window.addEventListener("keydown", suspendReaderFollow);
+
+function followReadingWord(el){
+  if(!el?.isConnected || Date.now() < userScrollSuspendUntil || document.getElementById("voicePanel")) return;
+  const viewport = window.visualViewport;
+  const top = viewport?.offsetTop || 0;
+  const bottom = top + (viewport?.height || window.innerHeight);
+  const header = document.querySelector(".site-header")?.getBoundingClientRect();
+  const nav = window.matchMedia("(max-width:720px)").matches
+    ? document.querySelector(".sidebar")?.getBoundingClientRect() : null;
+  const safeTop = Math.max(top, header?.bottom || 0) + 24;
+  const safeBottom = Math.min(bottom, nav?.top ?? bottom) - 24;
+  if(safeBottom <= safeTop) return;
+  const rect = el.getBoundingClientRect();
+  const center = rect.top + rect.height / 2;
+  const focusLine = safeTop + (safeBottom - safeTop) * 0.45;
+  // Keep a whole line still; advance when speech moves to the next line.
+  if(Math.abs(center - focusLine) < Math.max(22, rect.height * 0.7)) return;
+  const from = window.scrollY;
+  const target = Math.max(0, Math.min(
+    document.documentElement.scrollHeight - window.innerHeight,
+    from + center - focusLine
+  ));
+  cancelAnimationFrame(readerScrollFrame);
+  readerScrollFrame = 0;
+  if(Math.abs(target - from) < 2){
+    document.documentElement.classList.remove("reader-follow-scroll");
+    return;
+  }
+  // Frame-based scrolling also works on Safari 15 before native smooth scrolling.
+  document.documentElement.classList.add("reader-follow-scroll");
+  const finish = ()=>{readerScrollFrame=0;document.documentElement.classList.remove("reader-follow-scroll");};
+  if(window.matchMedia("(prefers-reduced-motion:reduce)").matches){
+    window.scrollTo(window.scrollX, target); finish(); return;
+  }
+  const started = performance.now();
+  const step = now=>{
+    const progress = Math.min(1, (now - started) / 360);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    window.scrollTo(window.scrollX, from + (target - from) * eased);
+    if(progress < 1) readerScrollFrame=requestAnimationFrame(step);
+    else finish();
+  };
+  readerScrollFrame=requestAnimationFrame(step);
+}
 
 function readTextAloud(text){
+  stopWordAudio();
   const btn = document.getElementById("readAloudBtn");
   if(!("speechSynthesis" in window)){
     showToast("Озвучка не поддерживается в этом браузере", true);
     return;
   }
+  const generation = ++readingGeneration;
   window.speechSynthesis.cancel();
+  cancelReaderFollow();
+  userScrollSuspendUntil = 0;
   clearSpeakingHighlight();
 
   const flat = text.replace(/\n+/g, " ");
@@ -2350,7 +2636,7 @@ function readTextAloud(text){
   const chunkOffsets = chunks.map(c => { const off = cumulative; cumulative += c.length; return off; });
 
   function highlightAt(globalIndex){
-    if(!canHighlight) return;
+    if(generation !== readingGeneration || !canHighlight) return;
     let idx = positions.findIndex(p => globalIndex >= p.start && globalIndex < p.end);
     if(idx === -1) idx = positions.findIndex(p => p.start >= globalIndex);
     if(idx === -1) return;
@@ -2358,12 +2644,7 @@ function readTextAloud(text){
     const el = wordSpans[idx];
     if(el){
       el.classList.add("word-speaking");
-      // Подсветка обновляется всегда, а автоматическую прокрутку приостанавливаем,
-      // если человек только что сам листал страницу.
-      if(Date.now() >= userScrollSuspendUntil){
-        lastProgrammaticScrollAt = Date.now();
-        el.scrollIntoView({behavior:"smooth", block:"nearest"});
-      }
+      followReadingWord(el);
     }
   }
 
@@ -2373,13 +2654,15 @@ function readTextAloud(text){
     u.rate = 0.92;
     // Не во всех браузерах есть пословная гранулярность — берём charIndex,
     // какой бы ни пришёл (word или sentence), это всё равно лучше, чем ничего.
+    u.onstart = ()=>highlightAt(chunkOffsets[i]);
     u.onboundary = (event) => {
       if(typeof event.charIndex === "number") highlightAt(chunkOffsets[i] + event.charIndex);
     };
     return u;
   });
-  utterances[utterances.length - 1].onend = resetReadAloudButton;
-  utterances[utterances.length - 1].onerror = resetReadAloudButton;
+  const finish = ()=>{if(generation === readingGeneration) resetReadAloudButton();};
+  utterances[utterances.length - 1].onend = finish;
+  utterances.forEach(u=>{u.onerror=()=>{if(generation === readingGeneration) stopReading();};});
   utterances.forEach(u=>window.speechSynthesis.speak(u));
   if(btn){ btn.textContent = "⏹ Остановить"; btn.dataset.playing = "1"; }
   const stopBtn = document.getElementById("floatingStopBtn");
@@ -2415,7 +2698,7 @@ function applyTheme(){
   const theme = (state.settings && state.settings.theme) || "dark";
   document.documentElement.setAttribute("data-theme", theme);
   const btn = document.getElementById("themeToggleBtn");
-  if(btn) btn.textContent = theme === "dark" ? "☀" : "🌙";
+  if(btn) btn.textContent = theme === "dark" ? "☀" : "☾";
 }
 function toggleTheme(){
   const current = (state.settings && state.settings.theme) || "dark";
@@ -2431,25 +2714,16 @@ function closeSettingsPanel(){
   document.getElementById("voiceSettingsBtn")?.setAttribute("aria-expanded", "false");
 }
 
-function closeMobileMenu(){
-  const nav = document.getElementById("primaryNav");
-  const button = document.getElementById("mobileMenuBtn");
-  nav?.classList.remove("mobile-open");
-  button?.classList.remove("active");
-  button?.setAttribute("aria-expanded", "false");
-  button?.setAttribute("aria-label", "Открыть меню");
-}
-
-function toggleMobileMenu(){
-  const nav = document.getElementById("primaryNav");
-  const button = document.getElementById("mobileMenuBtn");
-  if(!nav || !button) return;
-  const opening = !nav.classList.contains("mobile-open");
-  closeSettingsPanel();
-  nav.classList.toggle("mobile-open", opening);
-  button.classList.toggle("active", opening);
-  button.setAttribute("aria-expanded", String(opening));
-  button.setAttribute("aria-label", opening ? "Закрыть меню" : "Открыть меню");
+function boostMarkup(){
+  const audio = window.ReadFoxDialogueAudio;
+  if(!audio || !audio.supported) return "";
+  const current = audio.settings().boost;
+  const option = (value, label)=>`<option value="${value}" ${current===value ? "selected":""}>${label}</option>`;
+  return `<div class="settings-section">
+      <label class="settings-section-title" for="boostSelect">Громкость голоса Фокса</label>
+      <select id="boostSelect">${option("off","Обычная")}${option("loud","Громче")}${option("max","Максимум")}</select>
+      <div class="hint">Для «Говорения» и «Диалога». Если на iPhone звук стал тихим после микрофона, выбери «Максимум».</div>
+    </div>`;
 }
 
 function toggleVoicePanel(){
@@ -2459,7 +2733,8 @@ function toggleVoicePanel(){
   const en = englishVoices();
   const active = getActiveVoice();
   const btn = document.getElementById("voiceSettingsBtn");
-  const isMobile = window.matchMedia && window.matchMedia("(max-width: 640px)").matches;
+  const isMobile = window.matchMedia && window.matchMedia("(max-width: 900px)").matches;
+  cancelReaderFollow();
   const backdrop = document.createElement("div");
   backdrop.id = "settingsBackdrop";
   backdrop.className = "settings-backdrop";
@@ -2496,6 +2771,7 @@ function toggleVoicePanel(){
       <label class="settings-section-title" for="voiceSelect">Голос для озвучки</label>
     ${en.length ? `<select id="voiceSelect">${optionsHtml}</select>` : `<div class="hint">Браузер пока не отдал список голосов — некоторые browsers (например, мобильный Safari) подгружают их только после первого звука. Нажмите «Проверить».</div>`}
     </div>
+    ${boostMarkup()}
     <div class="actions">
       <button class="primary" id="voiceTestBtn">▶ Проверить</button>
       <button id="voiceCloseBtn">Закрыть</button>
@@ -2520,6 +2796,9 @@ function toggleVoicePanel(){
     state.settings.fontSize = Number(event.target.value);
     applyFontSize();
     saveState();
+  });
+  document.getElementById("boostSelect")?.addEventListener("change", (event)=>{
+    window.ReadFoxDialogueAudio?.configure({ boost: event.target.value });
   });
   const select = document.getElementById("voiceSelect");
   if(select){
@@ -2581,6 +2860,26 @@ function aiContextTranslationEndpoint(){
   return /\/generate\/?$/i.test(endpoint) ? endpoint.replace(/\/generate\/?$/i, "/translate-word") : "";
 }
 
+function aiSimpleWordEndpoint(){
+  const endpoint = aiGeneratorEndpoint();
+  return /\/generate\/?$/i.test(endpoint) ? endpoint.replace(/\/generate\/?$/i, "/translate-word-simple") : "";
+}
+
+async function fetchSimpleWordTranslation(word,sentence){
+  const endpoint=aiSimpleWordEndpoint();
+  if(!endpoint)return "";
+  try{
+    const response=await fetchWithTimeout(endpoint,18000,{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({word,sentence})
+    });
+    if(!response.ok)return "";
+    const data=await response.json();
+    const value=typeof data.translation==="string"?data.translation.trim():"";
+    return value.length<=160&&/[а-яё]/i.test(value)?value:"";
+  }catch(e){return "";}
+}
+
 function normalizeContextCachePart(value){
   return String(value || "").replace(/\s+/g, " ").trim().toLocaleLowerCase("en");
 }
@@ -2599,7 +2898,89 @@ function cacheContextualTranslation(word, sentence, contextual){
   return true;
 }
 
+function ensureReaderCache(text){
+  if(!text) return null;
+  if(!state.readerCaches || typeof state.readerCaches !== "object") state.readerCaches = {};
+  const fingerprint = readerTextFingerprint(text);
+  let cache = state.readerCaches[text.id];
+  if(!cache || cache.version !== READER_CACHE_VERSION || cache.fingerprint !== fingerprint){
+    cache = {
+      version:READER_CACHE_VERSION,
+      fingerprint,
+      updatedAt:Date.now(),
+      sentences:[]
+    };
+    state.readerCaches[text.id] = cache;
+  }
+  return cache;
+}
+
+function trimReaderCaches(){
+  const entries = Object.entries(state.readerCaches || {})
+    .sort((a, b)=>(b[1].updatedAt || 0) - (a[1].updatedAt || 0));
+  entries.slice(MAX_READER_CACHES).forEach(([textId])=>delete state.readerCaches[textId]);
+}
+
+function persistReaderCacheItems(text, items){
+  if(!text || !Array.isArray(items) || !items.length) return;
+  const cache = ensureReaderCache(text);
+  let changed = false;
+  items.forEach(item=>{
+    const contextual = item.contextual || cachedContextualTranslation(item.token, item.sentence);
+    if(!item.token || !item.sentence || !contextual || !contextual.translation || !contextual.sentenceTranslation) return;
+    let sentenceEntry = cache.sentences.find(entry=>entry.source === item.sentence);
+    if(!sentenceEntry){
+      sentenceEntry = {source:item.sentence, translation:contextual.sentenceTranslation, words:{}};
+      cache.sentences.push(sentenceEntry);
+    }
+    sentenceEntry.translation = contextual.sentenceTranslation;
+    const wordKey = normalizeContextCachePart(item.token).replace(/’/g, "'");
+    const transcription = transcriptionCache[wordKey];
+    sentenceEntry.words[wordKey] = {
+      word:item.token,
+      translation:contextual.translation,
+      matchedFragment:contextual.matchedFragment || "",
+      ipa:transcription && transcription.ipa ? transcription.ipa : ""
+    };
+    changed = true;
+  });
+  if(!changed) return;
+  cache.updatedAt = Date.now();
+  trimReaderCaches();
+  saveState();
+}
+
+function hydrateReaderCache(text){
+  if(!text || !state.readerCaches) return 0;
+  const cache = state.readerCaches[text.id];
+  if(!cache) return 0;
+  if(cache.version !== READER_CACHE_VERSION || cache.fingerprint !== readerTextFingerprint(text)){
+    delete state.readerCaches[text.id];
+    saveState();
+    return 0;
+  }
+  let restored = 0;
+  cache.sentences.forEach(sentence=>{
+    Object.values(sentence.words || {}).forEach(word=>{
+      if(cacheContextualTranslation(word.word, sentence.source, {
+        translation:word.translation,
+        sentenceTranslation:sentence.translation,
+        matchedFragment:word.matchedFragment || "",
+        source:"local-cache",
+        model:""
+      })) restored++;
+      const tokenKey = normalizeContextCachePart(word.word).replace(/’/g, "'");
+      if(word.ipa && !Object.prototype.hasOwnProperty.call(transcriptionCache, tokenKey)){
+        transcriptionCache[tokenKey] = {ipa:word.ipa, audio:null};
+      }
+    });
+  });
+  cache.updatedAt = Date.now();
+  return restored;
+}
+
 async function fetchContextualWordTranslation(word, sentence){
+  const translationText = currentText;
   const cached = cachedContextualTranslation(word, sentence);
   if(cached) return cached;
   const endpoint = aiContextTranslationEndpoint();
@@ -2620,12 +3001,18 @@ async function fetchContextualWordTranslation(word, sentence){
       const matchedFragment = data && typeof data.matchedFragment === "string"
         ? data.matchedFragment.trim()
         : "";
-      if(translated && /[а-яё]/i.test(translated)){
+      if(translated && /[а-яё]/i.test(translated)
+        && !isSuspiciousContextualFragment(word, matchedFragment || translated)){
         result = {translation:translated, sentenceTranslation, matchedFragment};
       }
     }
   }catch(e){ /* интерфейс покажет ошибку и предложит повторить AI-запрос */ }
-  if(result) cacheContextualTranslation(word, sentence, result);
+  if(result){
+    cacheContextualTranslation(word, sentence, result);
+    if(translationText){
+      persistReaderCacheItems(translationText, [{token:word, sentence, contextual:result}]);
+    }
+  }
   return result;
 }
 
@@ -2643,38 +3030,71 @@ function persistAiTranslation(key, sentence, contextual){
   saveState();
 }
 
-async function fetchTranscription(word, timeoutMs = 6000){
-  const k = word.toLowerCase().replace(/’/g, "'");
-  if(transcriptionCache.hasOwnProperty(k)) return transcriptionCache[k];
-  let result = TRANSCRIPTION_FALLBACKS[k] ? {ipa: TRANSCRIPTION_FALLBACKS[k], audio:null} : null;
-  if(result){ transcriptionCache[k] = result; return result; }
-  try{
-    const resp = await fetchWithTimeout(
-      "https://api.dictionaryapi.dev/api/v2/entries/en/" + encodeURIComponent(k), timeoutMs);
-    if(resp.ok){
-      const data = await resp.json();
-      let ipa = null, audio = null;
-      if(Array.isArray(data)){
-        for(const entry of data){
-          if(!ipa && entry.phonetic) ipa = entry.phonetic;
-          if(Array.isArray(entry.phonetics)){
-            for(const p of entry.phonetics){
-              if(!ipa && p.text) ipa = p.text;
-              if(!audio && p.audio) audio = p.audio;
-            }
-          }
-        }
-      }
-      if(ipa || audio) result = {ipa, audio};
+let pronunciationDataPromise = null;
+const transcriptionRequests = new Map();
+function loadPronunciationData(){
+  if(!pronunciationDataPromise){
+    pronunciationDataPromise = fetch('assets/pronunciations.json')
+      .then(response=>{if(!response.ok) throw Error('pronunciation-data');return response.json();})
+      .then(data=>data && typeof data.entries === 'object' ? data.entries : null)
+      .catch(()=>{pronunciationDataPromise=null;return null;});
+  }
+  return pronunciationDataPromise;
+}
+function normalizeIpa(value){
+  const text = typeof value === 'string' ? value.trim() : '';
+  if(!text || text.length>120 || /[<>]/.test(text))return null;
+  return text.startsWith('/') ? text : '/' + text.replace(/^\/+|\/+$/g,'') + '/';
+}
+async function fetchTranscription(word, timeoutMs = 3500, context = ''){
+  const k=String(word||'').trim().toLowerCase().replace(/’/g,"'");
+  if(!/^[a-z]+(?:['-][a-z]+)*$/.test(k))return null;
+  if(Object.prototype.hasOwnProperty.call(transcriptionCache,k))return transcriptionCache[k];
+  if(transcriptionRequests.has(k))return transcriptionRequests.get(k);
+  const request=(async()=>{
+    const entries=await loadPronunciationData();
+    let local=entries && Object.prototype.hasOwnProperty.call(entries,k) ? normalizeIpa(entries[k]) : null;
+    if(!local && entries && k.includes('-')){
+      const parts=k.split('-').map(part=>Object.prototype.hasOwnProperty.call(entries,part) ? normalizeIpa(entries[part]) : null);
+      if(parts.every(Boolean))local='/'+parts.map(part=>part.slice(1,-1)).join(' ')+'/';
     }
-  }catch(e){ /* словарь недоступен — транскрипцию просто не показываем */ }
-  transcriptionCache[k] = result;
-  return result;
+    if(local){const result={ipa:local,audio:null};transcriptionCache[k]=result;return result;}
+    if(TRANSCRIPTION_FALLBACKS[k]){const result={ipa:TRANSCRIPTION_FALLBACKS[k],audio:null};transcriptionCache[k]=result;return result;}
+    const aiEndpoint=aiGeneratorEndpoint().replace(/\/generate\/?$/i,'/pronunciation');
+    if(/\/pronunciation$/i.test(aiEndpoint)){
+      try{
+        const response=await fetchWithTimeout(aiEndpoint,12000,{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({word:k,context:String(context||'').slice(0,400)})
+        });
+        if(response.ok){
+          const data=await response.json();
+          const ipa=normalizeIpa(data.ipa);
+          if(ipa){const result={ipa,audio:null,estimated:true};transcriptionCache[k]=result;return result;}
+        }
+      }catch(_){}
+    }
+    try{
+      const response=await fetchWithTimeout('https://api.dictionaryapi.dev/api/v2/entries/en/'+encodeURIComponent(k),timeoutMs);
+      if(!response.ok){if(response.status===404)transcriptionCache[k]=null;return null;}
+      const data=await response.json();
+      if(!Array.isArray(data))return null;
+      for(const entry of data){
+        const candidates=[entry.phonetic,...(Array.isArray(entry.phonetics)?entry.phonetics.map(item=>item.text):[])];
+        const ipa=candidates.map(normalizeIpa).find(Boolean);
+        const audio=Array.isArray(entry.phonetics)?entry.phonetics.find(item=>item.audio)?.audio:null;
+        if(ipa){const result={ipa,audio:audio||null};transcriptionCache[k]=result;return result;}
+      }
+    }catch(_){}
+    return null;
+  })();
+  transcriptionRequests.set(k,request);
+  try{return await request}finally{transcriptionRequests.delete(k)}
 }
 
 let tooltipRequestId = 0;
 
-function showTooltip(el, token, forcedSentence){
+function showTooltip(el, token, forcedSentence){ if(LOCAL_ONLY) return showLocalWordTooltip(el, token, forcedSentence);
   const reqId = ++tooltipRequestId;
   const lexicalInfo = lookupWord(token);
   const key = lexicalInfo ? lexicalInfo.key : token.toLowerCase();
@@ -2899,7 +3319,7 @@ function showTooltip(el, token, forcedSentence){
 /* ============================================================
    ВЫДЕЛЕНИЕ НЕСКОЛЬКИХ СЛОВ (ФРАЗА)
    ============================================================ */
-function showPhraseTooltip(range, text, sentence){
+function showPhraseTooltip(range, text, sentence){ if(LOCAL_ONLY) return showLocalWordTooltip(range, text, sentence);
   const reqId = ++tooltipRequestId;
   const key = text.toLowerCase();
   const layer = document.getElementById("tooltipLayer");
@@ -3021,7 +3441,7 @@ function renderDictionary(){
       <br><button class="btn" id="dictGoRead">Перейти к текстам</button>
     </div>`;
     const goRead = document.getElementById("dictGoRead");
-    if(goRead) goRead.addEventListener("click", ()=>showView("home"));
+    if(goRead) goRead.addEventListener("click", ()=>showView("library"));
     return;
   }
 
@@ -3081,13 +3501,15 @@ function renderDictionary(){
   });
 
   content.querySelectorAll(".dict-ipa").forEach(ipaEl=>{
-    fetchTranscription(ipaEl.dataset.ipaKey).then(result=>{
+    fetchTranscription(ipaEl.dataset.ipaKey,3500,state.userWords[ipaEl.dataset.ipaKey]?.example||'').then(result=>{
       if(!ipaEl.isConnected) return;
       if(result && result.ipa){
-        ipaEl.textContent = result.ipa;
+        ipaEl.textContent = result.ipa+(result.estimated?' · вариант ИИ':'');
         ipaEl.classList.remove("loading");
       } else {
-        ipaEl.remove();
+        ipaEl.textContent = 'Транскрипция пока недоступна';
+        ipaEl.classList.remove('loading');
+        ipaEl.classList.add('unavailable');
       }
     });
   });
@@ -3109,10 +3531,11 @@ function translationForContext(word, context){
   if(context && word && word.contextTranslations && word.contextTranslations[context]){
     return word.contextTranslations[context];
   }
-  return word && word.translationSource === "ai" ? word.translation || "" : "";
+  return word ? word.translation || "" : "";
 }
 
 function sentenceTranslationForContext(word, context){
+  const local = localContextTranslation(context); if(local) return local;
   return context && word && word.contextSentenceTranslations
     ? word.contextSentenceTranslations[context] || ""
     : "";
@@ -3236,7 +3659,7 @@ function renderFlashcards(){
       <br><button class="btn" id="practiceGoRead">Перейти к текстам</button>
     </div>`;
     const goRead = document.getElementById("practiceGoRead");
-    if(goRead) goRead.addEventListener("click", ()=>showView("home"));
+    if(goRead) goRead.addEventListener("click", ()=>showView("library"));
     return;
   }
 
@@ -3315,8 +3738,8 @@ function renderFlashcards(){
 
   /* ── Обработчик клавиш для кнопок после переворота ── */
   practiceKeyHandler = (e)=>{
-    const inPractice = !!document.getElementById("practiceContent");
-    if(!inPractice){ document.removeEventListener("keydown", practiceKeyHandler); return; }
+    const inPractice = activeView === "practice";
+    if(!inPractice || activeView !== "practice" || document.getElementById("lessonDialog")?.open){ return; }
     if(e.key === " " || e.key === "Enter"){ e.preventDefault(); flip(); }
     else if(e.key === "ArrowRight" && practiceRevealed){ document.getElementById("pRemember")?.click(); }
     else if(e.key === "ArrowLeft"  && practiceRevealed){ document.getElementById("pForgot")?.click(); }
@@ -3415,7 +3838,7 @@ function renderQuiz(){
       Сейчас нет вопросов для повторения. ${escapeHtml(nextReviewSummary())}
       <br><button class="btn" id="quizGoRead">Перейти к текстам</button>
     </div>`;
-    document.getElementById("quizGoRead")?.addEventListener("click", ()=>showView("home"));
+    document.getElementById("quizGoRead")?.addEventListener("click", ()=>showView("library"));
     return;
   }
 
@@ -3546,6 +3969,24 @@ function renderQuiz(){
    ИНИЦИАЛИЗАЦИЯ
    ============================================================ */
 function wireGlobalEvents(){
+  const mobileSidebar=document.querySelector(".sidebar");
+  let lastMobileScroll=window.scrollY,scrollAnchor=lastMobileScroll,scrollDirection=0;
+  window.addEventListener("scroll",()=>{
+    const current=Math.max(0,window.scrollY);
+    const delta=current-lastMobileScroll;
+    const direction=delta>0?1:delta<0?-1:scrollDirection;
+    if(direction!==scrollDirection){scrollAnchor=lastMobileScroll;scrollDirection=direction;}
+    if(window.innerWidth<=720&&mobileSidebar&&!document.getElementById("ttBox")){
+      if(current<60||direction<0&&scrollAnchor-current>16){
+        mobileSidebar.classList.remove("mobile-nav-hidden");scrollAnchor=current;
+      }else if(direction>0&&current>80&&current-scrollAnchor>24){
+        mobileSidebar.classList.add("mobile-nav-hidden");scrollAnchor=current;
+      }
+    }else if(window.innerWidth>720){
+      mobileSidebar?.classList.remove("mobile-nav-hidden");
+    }
+    lastMobileScroll=current;
+  },{passive:true});
   document.querySelectorAll(".nav button[data-view]").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       const view = btn.dataset.view;
@@ -3557,8 +3998,7 @@ function wireGlobalEvents(){
       showView(view);
       if(view === "dictionary") renderDictionary();
       if(view === "practice") resetPracticeSession();
-      closeMobileMenu();
-    });
+        });
   });
 
   document.querySelectorAll("[data-practice-mode]").forEach(button=>{
@@ -3581,7 +4021,7 @@ function wireGlobalEvents(){
     });
   });
 
-  document.getElementById("readerBack").addEventListener("click", ()=>showView("home"));
+  document.getElementById("readerBack").addEventListener("click", ()=>showView("library"));
   document.getElementById("readerPrepRetry").addEventListener("click", retryReaderPreparation);
   document.getElementById("archiveTextBtn").addEventListener("click", toggleCurrentTextArchive);
   document.getElementById("fontDecrease").addEventListener("click", ()=>changeFontSize(-FONT_STEP));
@@ -3595,13 +4035,6 @@ function wireGlobalEvents(){
     }
   });
   document.getElementById("floatingStopBtn").addEventListener("click", stopReading);
-  document.getElementById("heroStart").addEventListener("click", ()=>{
-    document.getElementById("libraryGrid").scrollIntoView({behavior:"smooth", block:"start"});
-  });
-  document.getElementById("foxTextsLink").addEventListener("click", (event)=>{
-    event.preventDefault();
-    document.getElementById("textsSection").scrollIntoView({behavior:"smooth", block:"start"});
-  });
 
   document.querySelectorAll(".dict-tabs button").forEach(btn=>{
     btn.addEventListener("click", ()=>{
@@ -3622,17 +4055,21 @@ function wireGlobalEvents(){
   });
   document.getElementById("voiceSettingsBtn").addEventListener("click", (e)=>{
     e.stopPropagation();
-    closeMobileMenu();
-    toggleVoicePanel();
-  });
-  document.getElementById("mobileMenuBtn").addEventListener("click", (e)=>{
-    e.stopPropagation();
-    toggleMobileMenu();
+      toggleVoicePanel();
   });
   document.getElementById("themeToggleBtn").addEventListener("click", toggleTheme);
 
+  const preserveReadingSession = ()=>{
+    persistViewSession();
+    clearTimeout(saveTimer);
+    void persistState();
+  };
+  document.addEventListener("visibilitychange", ()=>{
+    if(document.visibilityState === "hidden") preserveReadingSession();
+  });
+  window.addEventListener("pagehide", preserveReadingSession);
+
   document.addEventListener("click", (e)=>{
-    if(!e.target.closest("#primaryNav, #mobileMenuBtn")) closeMobileMenu();
     if(!e.target.closest("#voicePanel, #voiceSettingsBtn")){
       if(document.getElementById("voicePanel")) closeSettingsPanel();
     }
@@ -3644,7 +4081,7 @@ function wireGlobalEvents(){
     if(wordEl){
       if(wordEl.closest("#readerBody")){
         const sentence = readerSentences[Number(wordEl.dataset.sidx)];
-        if(readerPreparation.status === "loading") return;
+        if(readerPreparation.status === "loading" && readerPreparation.cached === 0) return;
       }
       showTooltip(wordEl, wordEl.dataset.token);
       return;
@@ -3653,8 +4090,7 @@ function wireGlobalEvents(){
   });
   document.addEventListener("keydown", (e)=>{
     if(e.key === "Escape"){
-      closeMobileMenu();
-      closeSettingsPanel();
+          closeSettingsPanel();
     }
   });
 
@@ -3713,7 +4149,7 @@ function wireGlobalEvents(){
       e.preventDefault();
       if(e.target.closest("#readerBody")){
         const sentence = readerSentences[Number(e.target.dataset.sidx)];
-        if(readerPreparation.status === "loading") return;
+        if(readerPreparation.status === "loading" && readerPreparation.cached === 0) return;
       }
       showTooltip(e.target, e.target.dataset.token);
     }
@@ -3767,7 +4203,8 @@ function handleSelectionUp(){
   const text = sel.toString().trim();
   if(!text || !isSelectionInsideContent(sel)) return;
   const selectionElement = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
-  if(selectionElement && selectionElement.closest("#readerBody") && readerPreparation.status === "loading") return;
+  if(selectionElement && selectionElement.closest("#readerBody")
+    && readerPreparation.status === "loading" && readerPreparation.cached === 0) return;
   // Запоминаем контекстное предложение и положение ДО того, как снимем
   // выделение — иначе данные о диапазоне будут потеряны.
   const sentence = findContainingSentence(sel);
@@ -3793,17 +4230,187 @@ async function init(){
   renderLibrary();
   updateStatsUI();
   wireGlobalEvents();
+  restoreViewSession();
   const works = await checkStorageWorks();
   const indicator = document.getElementById("storageIndicator");
   if(indicator){
     if(storageBackend === "local"){
-      indicator.textContent = works ? "· сохранение: в этом браузере (localStorage) ✓" : "· сохранение сейчас не работает";
+      indicator.textContent = works ? "· прогресс сохранён в браузере" : "· сохранение сейчас не работает";
     } else {
       indicator.textContent = works ? "· сохранение: через Claude" : "· сохранение сейчас не работает";
     }
   }
-  if(!works) showStorageWarningBanner();
+  if(!works) showStorageWarningBanner(); window.dispatchEvent(new Event("readfox:ready"));
 }
+function localContextTranslation(sentence){return window.ReadFoxLibrary?.translate(sentence)||window.ReadFoxAcademy?.translateContext?.(sentence)||"";}
+function showLocalWordTooltip(anchor, token, forcedSentence){
+  if(localTooltipCleanup){localTooltipCleanup();localTooltipCleanup=null;}
+  const requestId=++tooltipRequestId;
+  const lexical=lookupWord(token), isPhrase=wordTokens(token).length>1;
+  const key=isPhrase?token.trim().toLowerCase():lexical?.key||token.trim().toLowerCase();
+  const sentence=forcedSentence||readerSentences[Number(anchor.dataset?.sidx)]||token;
+  const textAtOpen=currentText;
+  const previous=state.userWords[key];
+  const cached=cachedContextualTranslation(token,sentence);
+  const localMeaning=isPhrase?window.ReadFoxLibrary?.translate(token):window.ReadFoxLibrary?.word(token,sentence);
+  const ownMeaning=previous?.translationSource==="manual"
+    ?previous?.contextTranslations?.[sentence]||previous?.translation:"";
+  let translation=ownMeaning||localMeaning||previous?.contextTranslations?.[sentence]
+    ||cached?.translation||previous?.translation||lexical?.translation||"";
+  let contextTranslation=previous?.contextSentenceTranslations?.[sentence]
+    ||cached?.sentenceTranslation||localContextTranslation(sentence);
+  let source=ownMeaning?"manual":localMeaning?"dictionary":cached?"ai":"dictionary";
+  let contextBusy=false,wordBusy=false,failed=false;
+  const ipaKey=token.toLowerCase().replace(/’/g,"'");
+  const knownPronunciation=Object.prototype.hasOwnProperty.call(transcriptionCache,ipaKey)
+    ?transcriptionCache[ipaKey]:null;
+  const knownIpa=knownPronunciation?.ipa||null;
+  const layer=document.getElementById("tooltipLayer");
+  const rect=anchor.getBoundingClientRect();
+  layer.innerHTML='<div class="tooltip local-tooltip '+(isPhrase?"wide":"")+'" id="ttBox" role="dialog" aria-label="Перевод выделенного текста">'+
+    '<button class="tt-close" id="ttClose" aria-label="Закрыть перевод">×</button><div class="tt-word-row"><strong class="tt-word">'+escapeHtml(token)+'</strong><button class="tt-speak" id="ttSpeak" aria-label="Произнести выделенное">'+SOUND_ICON+'</button></div>'+
+    (!isPhrase?'<div class="tt-ipa'+(knownIpa?"":" loading")+'" id="localIpa">'+(knownIpa?escapeHtml(knownIpa)+(knownPronunciation.estimated?" · вариант ИИ":""):"ищем транскрипцию…")+'</div>':"")+
+    '<div class="tt-translation hidden" id="localMeaning"></div>'+
+    '<p class="tt-source hidden" id="localTranslationStatus" role="status"></p>'+
+    '<button class="text-action hidden" id="retryLocalTranslation" type="button">Повторить перевод</button>'+
+    '<label class="local-translation-label" for="localTranslation">Свой перевод или исправление</label>'+
+    '<input id="localTranslation" class="lesson-input" type="text" inputmode="text" autocomplete="off" placeholder="Например: живот" maxlength="1200">'+
+    '<div class="tt-actions"><button class="primary" id="localWordSave" type="button">'+(previous?"Сохранить перевод":"В мой словарь +")+'</button>'+
+    (previous?'<button class="danger" id="localWordRemove" type="button">Убрать</button>':"")+'</div>'+
+    '<div class="tt-context-row"><div class="tt-context">'+escapeHtml(sentence)+'</div><button class="tt-speak tt-speak-sm" id="ttSpeakContext" type="button" aria-label="Прочитать предложение" title="Прочитать предложение">'+SOUND_ICON+'</button></div>'+
+    '<div class="tt-context-translation hidden" id="localContextMeaning"><span>Перевод контекста</span><span id="localContextText"></span></div></div>';
+  const box=document.getElementById("ttBox");
+  const input=document.getElementById("localTranslation");
+  const save=document.getElementById("localWordSave");
+  function layout(){
+    if(requestId!==tooltipRequestId)return;
+    if(window.matchMedia("(max-width:720px)").matches){
+      const viewport=window.visualViewport;
+      const width=viewport?.width||window.innerWidth;
+      const height=viewport?.height||window.innerHeight;
+      layer.classList.add("mobile-word-tooltip");
+      document.querySelector(".sidebar")?.classList.add("mobile-nav-hidden");
+      box.style.position="fixed";
+      box.style.left=(viewport?.offsetLeft||0)+10+"px";
+      box.style.top=(viewport?.offsetTop||0)+8+"px";
+      box.style.width=Math.max(240,width-20)+"px";
+      box.style.maxHeight=Math.max(180,height-16)+"px";
+    }else{
+      layer.classList.remove("mobile-word-tooltip");
+      box.style.position="absolute";
+      box.style.width="";
+      box.style.maxHeight="";
+      const width=document.documentElement.clientWidth;
+      box.style.left=Math.max(10,Math.min(rect.left,width-box.offsetWidth-10))+window.scrollX+"px";
+      const top=rect.bottom+8+box.offsetHeight>innerHeight-80&&rect.top>box.offsetHeight+15
+        ?rect.top-box.offsetHeight-8:rect.bottom+8;
+      box.style.top=Math.max(10,top+window.scrollY)+"px";
+    }
+  }
+  function paint(){
+    if(requestId!==tooltipRequestId)return;
+    const meaning=document.getElementById("localMeaning");
+    meaning.textContent=translation;
+    meaning.classList.toggle("hidden",!translation);
+    const context=document.getElementById("localContextMeaning");
+    context.classList.toggle("hidden",!contextTranslation);
+    document.getElementById("localContextText").textContent=contextTranslation||"";
+    const status=document.getElementById("localTranslationStatus");
+    const statusText=contextBusy
+      ?(translation?"ИИ переводит предложение…":"ИИ ищет перевод слова…")
+      :wordBusy&&!translation?"Запасной ИИ ищет перевод слова…"
+      :failed?(translation?"Перевод предложения пока недоступен.":"ИИ не ответил. Можно вписать свой перевод."):"";
+    status.textContent=statusText;
+    status.classList.toggle("hidden",!statusText);
+    document.getElementById("retryLocalTranslation").classList.toggle("hidden",!failed);
+    save.disabled=!(input.value.trim()||translation);
+    layout();
+  }
+  localTooltipCleanup=()=>{
+    window.visualViewport?.removeEventListener("resize",layout);
+    window.visualViewport?.removeEventListener("scroll",layout);
+    window.removeEventListener("resize",layout);
+    layer.onclick=null;
+  };
+  window.visualViewport?.addEventListener("resize",layout);
+  window.visualViewport?.addEventListener("scroll",layout);
+  window.addEventListener("resize",layout);
+  layer.onclick=event=>{if(event.target===layer)hideTooltip();};
+  document.getElementById("ttClose").onclick=hideTooltip;
+  document.getElementById("ttSpeak").onclick=()=>speak(token);
+  document.getElementById("ttSpeakContext").onclick=()=>speak(sentence);
+  input.addEventListener("input",paint);
+  input.addEventListener("focus",layout);
+  save.onclick=()=>{
+    if(requestId!==tooltipRequestId)return;
+    const manual=input.value.trim();
+    const value=manual||translation;
+    if(!value)return;
+    addWord(key,value,previous?.status||"learning",sentence,{
+      sentenceTranslation:contextTranslation,
+      matchedFragment:manual?"":translation,
+      source:manual?"manual":source
+    });
+    showToast(previous?"Перевод и контекст обновлены":"Слово добавлено в твой словарь");
+    hideTooltip();
+  };
+  document.getElementById("localWordRemove")?.addEventListener("click",()=>{removeWord(key);hideTooltip();});
+  async function loadWord(){
+    if(wordBusy||translation||requestId!==tooltipRequestId)return;
+    wordBusy=true;paint();
+    const value=await fetchSimpleWordTranslation(token,sentence);
+    if(requestId!==tooltipRequestId||textAtOpen!==currentText)return;
+    wordBusy=false;
+    if(value&&!translation){translation=value;source="ai";}
+    else if(!value&&!contextBusy&&!translation)failed=true;
+    paint();
+  }
+  async function load(){
+    if(contextBusy||requestId!==tooltipRequestId)return;
+    contextBusy=true;failed=false;paint();
+    if(!translation)void loadWord();
+    const result=await fetchContextualWordTranslation(token,sentence);
+    if(requestId!==tooltipRequestId||textAtOpen!==currentText)return;
+    contextBusy=false;
+    if(result?.translation){
+      if(!translation){translation=result.translation;source="ai";}
+      if(result.sentenceTranslation)contextTranslation=result.sentenceTranslation;
+    }else if(!contextTranslation)failed=true;
+    paint();
+  }
+  document.getElementById("retryLocalTranslation").onclick=()=>{
+    if(!translation)void loadWord();
+    void load();
+  };
+  paint();
+  if(!translation||!contextTranslation)void load();
+  if(!isPhrase&&!knownIpa){
+    fetchTranscription(token,3500,sentence).then(result=>{
+      if(requestId!==tooltipRequestId||textAtOpen!==currentText)return;
+      const target=document.getElementById("localIpa");
+      if(!target)return;
+      target.classList.remove("loading");
+      target.textContent=result?.ipa
+        ?result.ipa+(result.estimated?" · вариант ИИ":"")
+        :"Транскрипция пока недоступна";
+      layout();
+    });
+  }
+}
+
+window.ReadFoxBridge=Object.freeze({
+  getWords:()=>Object.entries(state.userWords).map(([key,word])=>({key,...word})),
+  getStats:()=>({learning:Object.values(state.userWords).filter(w=>w.status==="learning").length,known:Object.values(state.userWords).filter(w=>w.status==="known").length,texts:state.readTextIds.length,due:Object.values(state.userWords).filter(w=>isReviewDue(w)).length}),
+  addWords(entries){ for(const entry of entries){ const key=String(entry.key||"").trim().toLowerCase(); if(!key || ["__proto__","constructor","prototype"].includes(key) || state.userWords[key]) continue; addWord(key,String(entry.translation||""),"learning",String(entry.example||""),{sentenceTranslation:entry.sentenceTranslation||localContextTranslation(entry.example||""),source:"dictionary"}); } },
+  reviewWord(key,correct){recordReview(key,!!correct);},
+  openView(name){showView(name);if(name==="dictionary")renderDictionary();if(name==="practice")resetPracticeSession();if(name==="library")renderLibrary();},
+  toast:showToast,
+  speak,
+  translateContext:localContextTranslation,
+  exportData,
+  importData:importDataFromFile
+});
 init();
 
 })();
+

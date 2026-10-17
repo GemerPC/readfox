@@ -1,6 +1,1 @@
-// После развёртывания Cloudflare Worker вставьте сюда его адрес с /generate.
-// Пример: https://readfox-text-generator.example.workers.dev/generate
-window.READFOX_CONFIG = Object.freeze({
-  aiGeneratorEndpoint: "https://readfox.gemerpc.workers.dev/generate",
-  build:"2026.08.15.23"
-});
+window.READFOX_CONFIG = Object.freeze({ academyEndpoint: "https://readfox.gemerpc.workers.dev/academy", aiGeneratorEndpoint: "https://readfox.gemerpc.workers.dev/generate", speechEndpoint: "https://readfox.gemerpc.workers.dev/speech", dialogueEndpoint: "https://readfox.gemerpc.workers.dev/dialogue", localOnly: true, build: "2026.10.17-minimal-orange" });
