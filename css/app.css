@@ -862,9 +862,6 @@ body:has(#lessonDialog[open]),body.academy-generating{overflow:hidden}
 .dialogue-voice-info[open]{max-height:140px;overflow:auto}
 .dialogue-voice-info p{line-height:1.7}
 .dialogue-voice-dock [hidden]{display:none!important}
-.dialogue-audio-settings{display:flex;flex-wrap:wrap;gap:12px;margin-top:9px}
-.dialogue-audio-settings label{display:grid;gap:4px;font-size:12px;color:var(--ink-soft)}
-.dialogue-audio-settings select{max-width:200px;min-height:36px;padding:6px 8px;font-size:13px}
 
 /* ── Responsive ──────────────────────────────────────── */
 @media(max-width:1180px){
@@ -1002,7 +999,6 @@ body:has(#lessonDialog[open]),body.academy-generating{overflow:hidden}
   .dialogue-voice-orb{width:31px;height:31px}
   .dialogue-voice-main,.dialogue-voice-finish{min-height:42px;padding:7px 11px;font-size:12px}
   .dialogue-voice-interim{max-height:40px;margin-top:5px;font-size:13px}
-  .dialogue-audio-settings select{font-size:16px}
 }
 @media(min-width:721px){
   .dialogue-voice-dock{position:relative;padding-right:100px}
@@ -1080,14 +1076,7 @@ body:has(#lessonDialog[open]),body.academy-generating{overflow:hidden}
 .dialogue-recover-sound{color:var(--ink-soft)}
 
 /* ── Dialogue: reading stage, settings panel, collapsible words ── */
-.dialogue-gear{display:grid;place-items:center;flex:none;width:36px;height:36px;margin-left:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink-soft);cursor:pointer}
-.dialogue-gear:hover,.dialogue-gear[aria-expanded="true"]{border-color:var(--accent);color:var(--accent-ink)}
-.dialogue-chat-header .dialogue-session-progress{margin-left:auto}
 .dialogue-chat{position:relative}
-.dialogue-settings{position:absolute;top:calc(100% - 2px);left:14px;right:14px;z-index:5;padding:12px 16px;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);box-shadow:0 8px 24px rgba(0,0,0,.14)}
-.dialogue-settings[hidden]{display:none}
-.dialogue-settings .dialogue-audio-settings{margin-top:0}
-.dialogue-settings .dialogue-voice-info{margin-top:10px}
 .dialogue-stage{display:flex;flex-direction:column;flex:1;min-height:0;margin:12px 14px 0;border:1px solid var(--line-strong);border-radius:14px;background:var(--bg);transition:border-color .2s,box-shadow .2s}
 .dialogue-stage.is-speaking{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
 .dialogue-stage .dialogue-messages{padding:16px}
@@ -1102,7 +1091,6 @@ button.dialogue-card-title{width:100%;padding:0;border:0;background:none;color:i
   .dialogue-chat-top{margin-bottom:8px}
   .dialogue-chat-top h1{font-size:22px;margin:2px 0}
   .dialogue-chat{height:calc(100dvh - 230px);min-height:480px}
-  .dialogue-settings{padding:10px 13px}
   .dialogue-voice-dock[data-phase="idle"] #dialogueVoiceStatus{display:none}
   .dialogue-stage{margin:8px 10px 0}
   .dialogue-stage .dialogue-messages{padding:12px}
@@ -1126,10 +1114,8 @@ button.dialogue-card-title{width:100%;padding:0;border:0;background:none;color:i
 .dialogue-top .dialogue-voice-main{grid-area:main}
 .dialogue-top .dialogue-voice-actions{grid-area:more;display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;margin:0;min-width:0}
 .dialogue-top .dialogue-voice-tools{grid-area:tools;display:flex;gap:6px}
-.dialogue-top .dialogue-gear{margin-left:0}
 .dialogue-exit{display:none;place-items:center;flex:none;width:36px;height:36px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink-soft);font-size:16px;cursor:pointer}
 .dialogue-exit:hover{border-color:var(--accent);color:var(--accent-ink)}
-.dialogue-settings{left:14px;right:14px}
 .dialogue-chat.is-live .dialogue-exit{display:grid}
 .dialogue-chat.is-live .dialogue-chat-header,.dialogue-chat.is-live .dialogue-composer-note,body.dialogue-live .dialogue-chat-top{display:none}
 .dialogue-chat.is-live{height:calc(100dvh - 130px);min-height:360px;max-height:none}
@@ -1149,7 +1135,6 @@ button.dialogue-card-title{width:100%;padding:0;border:0;background:none;color:i
   .dialogue-top .dialogue-voice-dock{padding-bottom:2px}
   .dialogue-top .dialogue-voice-state>div{gap:0}
   .dialogue-voice-dock[data-phase="idle"] #dialogueVoiceStatus{display:none}
-  .dialogue-settings{left:10px;right:10px}
   body.dialogue-live .sidebar{transform:translateY(calc(100% + 8px));visibility:hidden;pointer-events:none}
   body.dialogue-live footer{display:none}
   body.dialogue-live main{min-height:0;padding:8px 10px calc(8px + env(safe-area-inset-bottom))}
@@ -1158,7 +1143,5 @@ button.dialogue-card-title{width:100%;padding:0;border:0;background:none;color:i
   .dialogue-chat.is-live .dialogue-composer-wrap{padding:8px 10px}
   .dialogue-chat.is-live .dialogue-help{margin:0 0 4px}
 }
-.dialogue-settings .dialogue-voice-info{position:static;max-width:none;padding:0}
-.dialogue-settings .dialogue-voice-info[open]{width:auto;padding:0;border:0;background:none}
 .dialogue-top .dialogue-voice-actions .dialogue-link{white-space:nowrap}
 @media(max-width:720px){.dialogue-top .dialogue-voice-actions .dialogue-link{padding:6px 4px;font-size:12px}}
