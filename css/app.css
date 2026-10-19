@@ -1078,3 +1078,43 @@ body:has(#lessonDialog[open]),body.academy-generating{overflow:hidden}
 .feedback-answer{margin-left:8px;font-weight:700;color:var(--ink)}
 .lesson-rule-reminder{margin:12px 0;padding:10px 14px;border-left:3px solid var(--accent);background:var(--accent-bg);font-size:13px;line-height:1.6}
 .dialogue-recover-sound{color:var(--ink-soft)}
+
+/* ── Dialogue: reading stage, settings panel, collapsible words ── */
+.dialogue-gear{display:grid;place-items:center;flex:none;width:36px;height:36px;margin-left:8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink-soft);cursor:pointer}
+.dialogue-gear:hover,.dialogue-gear[aria-expanded="true"]{border-color:var(--accent);color:var(--accent-ink)}
+.dialogue-chat-header .dialogue-session-progress{margin-left:auto}
+.dialogue-chat{position:relative}
+.dialogue-settings{position:absolute;top:62px;left:10px;right:10px;z-index:5;padding:12px 16px;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);box-shadow:0 8px 24px rgba(0,0,0,.14)}
+.dialogue-settings[hidden]{display:none}
+.dialogue-settings .dialogue-audio-settings{margin-top:0}
+.dialogue-settings .dialogue-voice-info{margin-top:10px}
+.dialogue-stage{display:flex;flex-direction:column;flex:1;min-height:0;margin:12px 14px 0;border:1px solid var(--line-strong);border-radius:14px;background:var(--bg);transition:border-color .2s,box-shadow .2s}
+.dialogue-stage.is-speaking{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
+.dialogue-stage .dialogue-messages{padding:16px}
+.dialogue-message.is-latest.is-bot .dialogue-bubble{max-width:100%;padding:16px 18px;background:var(--accent-bg)}
+.dialogue-message.is-latest.is-bot .dialogue-bubble>p[lang]{font-size:20px;line-height:1.55;font-weight:550}
+.dialogue-message.is-latest.is-bot .dialogue-message-avatar{align-self:flex-start}
+.dialogue-stage .dialogue-voice-interim{flex:none;margin:0;padding:10px 16px;border-left:0;border-top:1px solid var(--line);font-size:15px;color:var(--ink-soft);background:var(--surface)}
+.dialogue-voice-dock{margin-bottom:8px;padding-bottom:8px}
+button.dialogue-card-title{width:100%;padding:0;border:0;background:none;color:inherit;text-align:left;font:inherit;font-size:12px;font-weight:600;color:var(--ink-soft);cursor:default}
+@media(min-width:721px){.dialogue-stage .dialogue-messages{min-height:260px}}
+@media(max-width:720px){
+  .dialogue-chat-top{margin-bottom:8px}
+  .dialogue-chat-top h1{font-size:22px;margin:2px 0}
+  .dialogue-chat{height:calc(100dvh - 230px);min-height:480px}
+  .dialogue-settings{top:58px;padding:10px 13px}
+  .dialogue-voice-dock[data-phase="idle"] #dialogueVoiceStatus{display:none}
+  .dialogue-stage{margin:8px 10px 0}
+  .dialogue-stage .dialogue-messages{padding:12px}
+  .dialogue-message.is-latest.is-bot .dialogue-bubble>p[lang]{font-size:18px}
+  .dialogue-composer-note{display:none}
+  .dialogue-voice-state{min-height:28px}
+  .dialogue-voice-actions{margin-top:6px}
+  .dialogue-composer-wrap .dialogue-vocabulary{padding:2px 0 6px}
+  button.dialogue-card-title{min-height:30px;cursor:pointer}
+  button.dialogue-card-title::after{content:"▾";margin-left:8px;color:var(--ink-muted)}
+  .dialogue-vocabulary.is-open button.dialogue-card-title::after{content:"▴"}
+  .dialogue-composer-wrap .dialogue-vocabulary:not(.is-open) .dialogue-words{display:none}
+  .dialogue-composer-wrap .dialogue-card-title{margin-bottom:0}
+  .dialogue-composer-wrap .dialogue-vocabulary.is-open .dialogue-card-title{margin-bottom:6px}
+}
