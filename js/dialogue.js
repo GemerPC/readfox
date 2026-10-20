@@ -48,8 +48,9 @@ function pauseForTyping(){
  syncSend();
 }
 
-let settingsOpen=false,followLog=true,autoScrollUntil=0,logObserver=null,seenSession='',busyShown=false;
+let settingsOpen=false,logShown=false,followLog=true,autoScrollUntil=0,logObserver=null,seenSession='',busyShown=false;
 const seen=new Set();
+const fit=t=>{const n=String(t||'').length;return n<=60?'is-xl':n<=120?'is-l':n<=220?'is-m':'is-s';};
 const reduceMotion=()=>!!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 const slidersIcon='<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>';
 const bulbIcon='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg>';
@@ -67,13 +68,14 @@ function scrollToEnd(smooth=true){
  followLog=true;jumpButton(false);const animate=smooth&&!reduceMotion();autoScrollUntil=animate?Date.now()+700:0;
  log.scrollTo({top:log.scrollHeight,behavior:animate?'smooth':'auto'});
 }
-// Follow new content only while the reader is at the end; scrolling up pauses auto-scroll.
+function sizeSlides(log){log.style.setProperty('--dlg-slide',log.clientHeight+'px');}
+// Follow new content only while the reader is on the last slide; scrolling back pauses auto-scroll.
 function watchLog(log){
  logObserver?.disconnect();logObserver=null;if(!log)return;
  const stopAuto=()=>{autoScrollUntil=0;};log.addEventListener('wheel',stopAuto,{passive:true});log.addEventListener('touchstart',stopAuto,{passive:true});
- log.addEventListener('scroll',()=>{if(Date.now()<autoScrollUntil)return;followLog=nearEnd(log);if(followLog)jumpButton(false);},{passive:true});
+ log.addEventListener('scroll',()=>{if(Date.now()<autoScrollUntil)return;followLog=nearEnd(log);jumpButton(!followLog);},{passive:true});
  if(!window.ResizeObserver)return;let first=true;
- logObserver=new ResizeObserver(()=>{if(first){first=false;return;}if(followLog&&Date.now()>=autoScrollUntil)log.scrollTop=log.scrollHeight;});
+ logObserver=new ResizeObserver(()=>{sizeSlides(log);if(first){first=false;return;}if(followLog&&Date.now()>=autoScrollUntil)scrollToEnd(true);});
  logObserver.observe(log);if(log.firstElementChild)logObserver.observe(log.firstElementChild);
 }
 function settingsMarkup(s){
@@ -108,7 +110,7 @@ function paintVoice(){
  const unsupported='Распознавание недоступно. Используй Safari на iPhone или Chrome на компьютере. Можно общаться текстом.';
  const status=document.getElementById('dialogueVoiceStatus');if(status)status.textContent=voiceState.message||(!supported?unsupported:active?(phase==='listening'?'Говори по-английски. Пауза — и ответ отправится.':phase==='speaking'?'Микрофон выключен, пока говорит Фокс.':'Можно поставить разговор на паузу.'):'');
  const notice=document.getElementById('dialogueVoiceNotice');if(notice){notice.hidden=!voiceState.message;notice.textContent=voiceState.message||'';}
- const interim=document.getElementById('dialogueVoiceInterim');if(interim){interim.hidden=!voiceState.interim;interim.firstElementChild.textContent=voiceState.interim||'';}
+ const interim=document.getElementById('dialogueVoiceInterim');if(interim){interim.hidden=!voiceState.interim;const said=interim.querySelector('.dlg-slide-text');said.textContent=voiceState.interim||'';said.className='dlg-slide-text '+fit(voiceState.interim);}
  const toggle=chatEl.querySelector('[data-dialogue-action="voice-toggle"]');
  if(toggle){const label=!supported?unsupported:active?'Выключить микрофон':phase==='idle'?'Начать голосом':'Продолжить голосом';toggle.disabled=!supported||(!active&&(busy||s?.pending));toggle.setAttribute('aria-pressed',String(active));toggle.querySelector('span').textContent=label;toggle.title=label;}
  const again=chatEl.querySelector('[data-dialogue-action="voice-again"]');if(again)again.disabled=!supported||busy||s?.pending||!lastReply();
@@ -166,7 +168,7 @@ function deckFor(id){
 }
 function add(role,text,extra={}){const s=state.session;s.messages.push({id:s.nextId++,role,text,...extra});if(s.messages.length>80){const removed=s.messages.slice(0,-80).filter(m=>m.role==='user'||m.role==='bot').map(m=>({role:m.role==='bot'?'assistant':'user',content:m.text}));s.memory=compactMemory([...(s.memory||[]),...removed]);s.messages=s.messages.slice(-80);}}
 function start(){stop();state.session={id:sessionId(),completed:false,rewardXp:0,topic:state.selectedTopic,deck:deckFor(state.selectedTopic),messages:[],memory:[],nextId:1,draft:'',hint:'',pending:true,turns:0,checked:0,correct:0,used:[]};shown.clear();hintShown=false;error='';save();requestReply();}
-function stop(){voice?.stop();settingsOpen=false;applyLive();requestNumber++;controller?.abort();controller=null;busy=false;save();}
+function stop(){voice?.stop();settingsOpen=false;logShown=false;applyLive();requestNumber++;controller?.abort();controller=null;busy=false;save();}
 async function requestReply(){
  const s=state.session;if(!s||busy||!s.pending||s.completed)return;
  if(voiceState.active)voice?.waiting();let spokenReply='';
@@ -193,14 +195,20 @@ function chip(w,used=false){return `<button type="button" class="dialogue-word $
 function setup(){const t=topics[state.selectedTopic],deck=deckFor(state.selectedTopic);return `<div class="dialogue-intro"><div class="dialogue-kicker">ГОЛОСОВОЙ РАЗГОВОР С ИИ</div><h1>Диалог с Фоксом</h1><p>Говори по-английски и слушай ответы Фокса. Живой разговор, знакомые слова и помощь с грамматикой.</p></div><div class="dialogue-setup"><div class="dialogue-topic-grid" role="group" aria-label="Тема разговора">${Object.entries(topics).map(([id,t])=>`<button class="dialogue-topic ${id===state.selectedTopic?'is-selected':''}" data-dialogue-topic="${id}" aria-pressed="${id===state.selectedTopic}"><span class="dialogue-topic-icon">${t.icon}</span><strong>${t.title}</strong><small>${t.description}</small></button>`).join('')}</div><div class="dialogue-preview"><div class="dialogue-preview-top"><span class="dialogue-avatar">🦊</span><div><span class="dialogue-kicker">ТВОЙ ИИ-СОБЕСЕДНИК</span><h2>Фокс готов к разговору</h2></div><span class="dialogue-level">${esc(level())}</span></div><p>«${t.title}»: скажи свою реплику — Фокс ответит голосом. Используй все шесть слов и получи награду. Переписываться тоже можно.</p><div class="dialogue-words">${deck.map(w=>chip(w)).join('')}</div><button class="dialogue-primary dialogue-start" data-dialogue-action="start">К разговору →</button><p class="dialogue-local-note">В следующем окне включи микрофон. Нужен интернет; ИИ получает текст беседы и выбранные слова.</p></div></div>`;}
 function chat(){
  const s=state.session,disabled=busy||s.pending,latest=[...s.messages].reverse().find(m=>m.role==='bot')?.id;
- const message=m=>`<div class="dialogue-message is-${m.role}${m.id===latest?' is-latest':''}${seen.has(m.id)?'':' is-new'}">${m.role==='bot'?`<span class="dialogue-sender">${m.check?'Фокс · проверка':'Фокс'}<i class="dlg-speaking" aria-hidden="true"><b></b><b></b><b></b></i></span>`:''}<p ${m.role==='note'?'':'lang="en"'}>${esc(m.text)}</p>${m.ru?`<button type="button" class="dialogue-translate" data-dialogue-translate="${m.id}" aria-expanded="${shown.has(m.id)}">${shown.has(m.id)?'Скрыть перевод':'Перевод'}</button>${shown.has(m.id)?`<p class="dialogue-translation">${esc(m.ru)}</p>`:''}`:''}</div>`;
- const typing=busy?`<div class="dialogue-message is-bot dlg-typing${busyShown?'':' is-new'}" role="status" aria-label="Фокс обдумывает ответ"><span class="dlg-dots" aria-hidden="true"><i></i><i></i><i></i></span></div>`:'';
- const problem=!busy&&(s.pending||error)?`<div class="dialogue-ai-error" role="status"><p>${esc(error||'Реплика сохранена. Продолжим разговор?')}</p>${s.pending?'<button type="button" class="dlg-retry" data-dialogue-action="retry">Повторить</button>':''}</div>`:'';
- return `<div class="dialogue-chat is-live">${headerMarkup(s)}<div class="dialogue-messages" id="dialogueMessages" role="log" aria-live="polite" aria-label="Разговор с Фоксом"><div class="dlg-thread">${s.messages.map(message).join('')}${typing}${problem}<div id="dialogueVoiceInterim" class="dialogue-message is-user dlg-interim" hidden><p lang="en"></p></div><p id="dialogueVoiceNotice" class="dlg-notice" role="status" hidden></p></div></div><div class="dialogue-composer-wrap"><button type="button" class="dlg-jump" id="dialogueJump" data-dialogue-action="jump" aria-label="К новым сообщениям" hidden>↓</button>${hintShown&&s.hint?`<div class="dialogue-ai-hint" lang="en">Например: ${esc(s.hint)}</div>`:''}<form id="dialogueForm" class="dialogue-composer"><button type="button" class="dlg-hint-btn" data-dialogue-action="hint" aria-pressed="${hintShown}" aria-label="${hintShown?'Скрыть пример':'Подсказка'}" title="${hintShown?'Скрыть пример':'Подсказка'}" ${!s.hint||disabled?'disabled':''}>${bulbIcon}</button><label class="sr-only" for="dialogueInput">Твой ответ</label><input id="dialogueInput" value="${esc(s.draft)}" placeholder="${busy?'Фокс пишет…':'Напиши ответ…'}" maxlength="800" autocomplete="off" enterkeyhint="send" ${disabled?'disabled':''}><button id="dialogueSend" type="submit" aria-label="Отправить ответ" ${disabled||!s.draft.trim()?'disabled':''}>↑</button></form></div></div>`;
+ // Notes (corrections, checks) arrive with the next reply and are shown on its screen.
+ const groups=[];let notes=[];
+ for(const m of s.messages){if(m.role==='note'){notes.push(m);continue;}groups.push({m,notes});notes=[];}
+ const noteHtml=list=>list.map(n=>`<p class="dlg-slide-note">${esc(n.text)}</p>`).join('');
+ const tail=noteHtml(notes)+(busy?`<div class="dlg-slide-tail${busyShown?'':' is-new'}" role="status"><span class="dlg-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>Фокс думает…</span></div>`:'')+(!busy&&(s.pending||error)?`<div class="dlg-slide-tail dialogue-ai-error" role="status"><p>${esc(error||'Реплика сохранена. Продолжим разговор?')}</p>${s.pending?'<button type="button" class="dlg-retry" data-dialogue-action="retry">Повторить</button>':''}</div>`:'');
+ const slide=({m,notes},last)=>`<section class="dlg-slide is-${m.role}${m.id===latest?' is-latest':''}${seen.has(m.id)?'':' is-new'}">${last&&groups.length>1?'<span class="dlg-history-hint" aria-hidden="true" title="Листай вверх, чтобы перечитать разговор"></span>':''}${noteHtml(notes)}<span class="dlg-slide-who">${m.role==='bot'?(m.check?'Фокс · проверка':'Фокс'):'Ты'}${m.role==='bot'?'<i class="dlg-speaking" aria-hidden="true"><b></b><b></b><b></b></i>':''}</span><p class="dlg-slide-text ${fit(m.text)}" lang="en">${esc(m.text)}</p>${m.ru?`<button type="button" class="dialogue-translate" data-dialogue-translate="${m.id}" aria-expanded="${shown.has(m.id)}">${shown.has(m.id)?'Скрыть перевод':'Перевод'}</button>${shown.has(m.id)?`<p class="dialogue-translation">${esc(m.ru)}</p>`:''}`:''}${last?tail:''}</section>`;
+ const slides=groups.length?groups.map((g,i)=>slide(g,i===groups.length-1)).join(''):tail?`<section class="dlg-slide">${tail}</section>`:'';
+ return `<div class="dialogue-chat is-live">${headerMarkup(s)}<div class="dialogue-messages" id="dialogueMessages" role="log" aria-live="polite" aria-label="Разговор с Фоксом"><div class="dlg-thread">${slides}<section id="dialogueVoiceInterim" class="dlg-slide is-user dlg-interim" hidden><span class="dlg-slide-who">Ты</span><p class="dlg-slide-text" lang="en"></p></section></div></div><div class="dialogue-composer-wrap"><button type="button" class="dlg-jump" id="dialogueJump" data-dialogue-action="jump" aria-label="К последней реплике" hidden>↓</button><p id="dialogueVoiceNotice" class="dlg-notice" role="status" hidden></p>${hintShown&&s.hint?`<div class="dialogue-ai-hint" lang="en">Например: ${esc(s.hint)}</div>`:''}<form id="dialogueForm" class="dialogue-composer"><button type="button" class="dlg-hint-btn" data-dialogue-action="hint" aria-pressed="${hintShown}" aria-label="${hintShown?'Скрыть пример':'Подсказка'}" title="${hintShown?'Скрыть пример':'Подсказка'}" ${!s.hint||disabled?'disabled':''}>${bulbIcon}</button><label class="sr-only" for="dialogueInput">Твой ответ</label><input id="dialogueInput" value="${esc(s.draft)}" placeholder="${busy?'Фокс пишет…':'Напиши ответ…'}" maxlength="800" autocomplete="off" enterkeyhint="send" ${disabled?'disabled':''}><button id="dialogueSend" type="submit" aria-label="Отправить ответ" ${disabled||!s.draft.trim()?'disabled':''}>↑</button></form></div></div>`;
 }
+
 function render(scroll=false){
  const el=document.getElementById('dialogueContent');if(!el)return;
- const prev=document.getElementById('dialogueMessages'),visible=!!prev&&prev.clientHeight>0,oldScroll=visible?prev.scrollTop:0;
+ // A thread that was hidden (first load, another tab) opens on the last reply instead of scrolling through history.
+ const prev=document.getElementById('dialogueMessages'),visible=logShown&&!!prev&&prev.clientHeight>0,oldScroll=visible?prev.scrollTop:0;
  if(state.session){updateUsed(state.session);if(isComplete(state.session))complete(state.session);else state.session.completed=false;}
  const s=state.session,live=!!s&&!s.completed;
  // History restored from storage appears at once; only messages that arrive while the chat is open animate in.
@@ -211,9 +219,11 @@ function render(scroll=false){
  el.querySelectorAll('[data-dialogue-insert]').forEach(b=>{b.disabled=!!s&&(busy||s.pending);b.title=s?'Вставить в ответ':'Произнести слово';});
  const log=document.getElementById('dialogueMessages');
  if(log){
+  sizeSlides(log);
   if(!visible){log.scrollTop=log.scrollHeight;followLog=true;}
   else{log.scrollTop=oldScroll;if(scroll){if(followLog)requestAnimationFrame(()=>{if(log.isConnected)scrollToEnd(true);});else jumpButton(true);}}
  }
+ logShown=!!log&&log.clientHeight>0;
  watchLog(log);
 }
 function bind(){const el=document.getElementById('dialogueContent');if(!el||el.dataset.aiBound)return;el.dataset.aiBound='1';el.addEventListener('pointerdown',e=>{if(e.target.closest('[data-dialogue-insert]')&&document.activeElement?.id==='dialogueInput')e.preventDefault();});el.addEventListener('click',e=>{if(settingsOpen&&!e.target.closest('#dialogueSettings,[data-dialogue-action="settings"]'))toggleSettings(false);const b=e.target.closest('button');if(!b||b.disabled)return;if(b.dataset.dialogueEngine||b.dataset.dialogueBoost){pauseForTyping();window.ReadFoxDialogueAudio?.configure(b.dataset.dialogueEngine?{engine:b.dataset.dialogueEngine}:{boost:b.dataset.dialogueBoost});syncSettings();paintVoice();}else if(b.dataset.dialogueTopic){state.selectedTopic=b.dataset.dialogueTopic;save();render();}else if(b.dataset.dialogueInsert){insertWord(b.dataset.dialogueInsert);if(b.closest('#dialogueSettings'))toggleSettings(false);}else if(b.dataset.dialogueTranslate){const id=Number(b.dataset.dialogueTranslate);shown.has(id)?shown.delete(id):shown.add(id);render();}else{switch(b.dataset.dialogueAction){case 'voice-toggle':if(voiceState.active)pauseForTyping();else enableVoice();break;case 'voice-again':toggleSettings(false);if(voiceState.active||voiceState.phase!=='idle')recoverVoiceSound();else enableVoice(true);break;case 'theme':document.getElementById('themeToggleBtn')?.click();break;case 'jump':scrollToEnd(true);break;case 'start':start();break;case 'learn':bridge().openView?.('home');break;case 'retry':requestReply();break;case 'topics':stop();state.session=null;error='';save();render();break;case 'hint':hintShown=!hintShown;render();break;case 'exit':if(state.session?.messages.some(m=>m.role==='user')&&!confirm('Выйти из разговора? Текущая беседа будет закрыта.'))break;stop();state.session=null;error='';save();render();break;case 'settings':toggleSettings();break;}}});el.addEventListener('focusin',e=>{if(e.target.id==='dialogueInput')pauseForTyping();});el.addEventListener('input',e=>{if(e.target.id==='dialogueInput'&&state.session){state.session.draft=e.target.value;syncSend();save();}});el.addEventListener('submit',e=>{if(e.target.id==='dialogueForm'){e.preventDefault();const s=state.session;if(s&&!s.draft.trim()&&voiceState.active&&voiceState.phase==='listening'&&voiceState.interim){voice?.finish();return;}send();}});render();}
