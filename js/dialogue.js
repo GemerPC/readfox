@@ -179,7 +179,7 @@ async function requestReply(){
   const data=await response.json();
   if(!response.ok)throw new Error(data.error||'ИИ сейчас недоступен. Попробуй снова.');
   if(data.completed){if(id!==requestNumber||state.session!==s)return;updateUsed(s);if(isComplete(s)){s.turns++;complete(s,true);render(true);return;}throw new Error('Не удалось сверить прогресс слов. Попробуй снова.');}
-  if(typeof data.reply!=='string'||typeof data.translation!=='string'||data.source!=='cloudflare-workers-ai')throw new Error('ИИ вернул неполный ответ. Попробуй снова.');
+  if(typeof data.reply!=='string'||typeof data.translation!=='string'||!['openrouter-ai','cloudflare-workers-ai'].includes(data.source))throw new Error('ИИ вернул неполный ответ. Попробуй снова.');
   if(id!==requestNumber||state.session!==s)return;
   const lastUser=[...s.messages].reverse().find(m=>m.role==='user');
   if(lastUser){s.turns++;updateUsed(s);}

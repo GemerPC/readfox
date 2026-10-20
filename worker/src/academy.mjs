@@ -1,3 +1,4 @@
+import { aiConfigured, chat } from './llm.mjs';
 const MODELS = ['@cf/google/gemma-4-26b-a4b-it', '@cf/zai-org/glm-4.7-flash'];
 const LEVELS = ['A1', 'A2', 'B1', 'B2'];
 const LESSON_MODEL = MODELS[0];
@@ -304,7 +305,7 @@ export async function handleAcademy(request, env, origin) {
   let data;
   try { data = input(await boundedJson(request)); }
   catch (error) { return respond({error: error.message === 'body-too-large' ? 'Слишком большой запрос.' : 'Некорректные параметры задания.'}, error.message === 'body-too-large' ? 413 : 400, origin); }
-  if (!env.AI || typeof env.AI.run !== 'function') return respond({error: 'Сервис генерации заданий пока недоступен.'}, 503, origin);
+  if (!aiConfigured(env)) return respond({error: 'Сервис генерации заданий пока недоступен.'}, 503, origin);
   const started = Date.now();
   let reason = '', failure, repairData = null;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -315,11 +316,11 @@ export async function handleAcademy(request, env, origin) {
     try {
       const repair = reason ? '\nThe previous generated set failed a structural check: ' + reason + '. Generate a complete corrected fresh set. Do not change the required count or levels.' : '';
       const generationBudget = Math.min(data.kind === 'placement' ? 55000 : 90000, remaining - 35000);
-      const result = await timedStage('generation', model, attempt, generationBudget, started, request.signal, () => env.AI.run(model, {
+      const result = await timedStage('generation', model, attempt, generationBudget, started, request.signal, () => chat(env, {
         messages: [{role: 'system', content: instructions(data) + repair}, {role: 'user', content: JSON.stringify({...data,...(repairData ? {previousRejectedSet:repairData} : {})})}],
         response_format:outputFormat(data.kind),max_completion_tokens: data.kind === 'placement' ? 6200 : 2600, chat_template_kwargs:{enable_thinking:false}, reasoning_effort:'low',
-        temperature: attempt === 0 ? 0.7 : 0.5, stream: false
-      }));
+        temperature: attempt === 0 ? 0.7 : 0.5
+      }, {fallbackModel: model, timeoutMs: Math.max(20000, generationBudget - 20000), signal: request.signal}));
       let parsed;
       try { parsed = parseResult(result); if (data.kind === 'lesson' && parsed.sentences) parsed=compileLesson(parsed,data); else if (data.kind === 'lesson' && isObject(parsed.exercises)) parsed = {grammar:parsed.grammar,questions:['choice1','gap','tiles','listen','input','choice2'].map(key=>parsed.exercises[key])}; } catch (error) { reason = 'invalid or incomplete JSON'; throw error; }
       let generated;
@@ -328,13 +329,13 @@ export async function handleAcademy(request, env, origin) {
       if (reviewBudget < 1000) throw Error('quality review incomplete');
       let reviewed;
       try {
-        const reviewResult = await timedStage('review', REVIEW_MODEL, attempt, Math.min(45000, reviewBudget), started, request.signal, () => env.AI.run(REVIEW_MODEL, {
+        const reviewResult = await timedStage('review', REVIEW_MODEL, attempt, Math.min(45000, reviewBudget), started, request.signal, () => chat(env, {
           messages:[
             {role:'system',content:reviewInstructions()},
             {role:'user',content:JSON.stringify({kind:data.kind,level:data.level,requestedTitle:data.title,requestedGrammar:data.grammar,words:data.words,grammar:generated.grammar,questions:generated.questions})}
           ],
-          response_format:reviewFormat,max_completion_tokens:2200,chat_template_kwargs:{enable_thinking:false},reasoning_effort:'low',temperature:0.1,stream:false
-        }));
+          response_format:reviewFormat,max_completion_tokens:2200,chat_template_kwargs:{enable_thinking:false},reasoning_effort:'low',temperature:0.1
+        }, {fallbackModel: REVIEW_MODEL, timeoutMs: Math.max(15000, Math.min(45000, reviewBudget) - 10000), signal: request.signal}));
         reviewed = parseReview(reviewResult);
       } catch (error) { reason = 'independent quality review could not be completed'; throw error; }
       console.info('ReadFox academy quality', {attempt:attempt + 1, accepted:reviewed.valid, issueCount:reviewed.issues.length, elapsedMs:Date.now() - started});
@@ -344,16 +345,16 @@ export async function handleAcademy(request, env, origin) {
         reason = 'independent quality review rejected ambiguous, incorrect, or unsuitable exercises';
         throw Error('quality rejected');
       }
-      return respond({kind: data.kind, level: data.level, lessonId: data.lessonId, ...generated, words: data.words, source: 'cloudflare-workers-ai', model}, 200, origin);
+      return respond({kind: data.kind, level: data.level, lessonId: data.lessonId, ...generated, words: data.words, source: result.source, model: result.model || model}, 200, origin);
     } catch (error) {
       failure = error;
-      if (/429|quota|daily limit|rate limit/i.test(String(error?.message || error)) || error?.message === 'request-aborted') break;
+      if (error?.status === 429 || /429|quota|daily limit|rate limit/i.test(String(error?.message || error)) || error?.message === 'request-aborted') break;
       // Do not log learner vocabulary or raw responses. Repair reasons come only from our validators.
       if (!reason) reason = 'invalid or incomplete JSON';
       console.warn('ReadFox academy generation retry', {attempt: attempt + 1, model, code: reason, timedOut: error?.message === 'AI-timeout', elapsedMs:Date.now() - started});
     }
   }
-  const limited = /429|quota|daily limit|rate limit/i.test(String(failure?.message || failure));
+  const limited = failure?.status === 429 || /429|quota|daily limit|rate limit/i.test(String(failure?.message || failure));
   const cancelled = failure?.message === 'request-aborted';
   return respond({error: cancelled ? 'Генерация отменена.' : limited ? 'Лимит ИИ временно исчерпан. Попробуй позже.' : 'Не удалось составить новые задания. Попробуй ещё раз — твой прогресс сохранён.'}, cancelled ? 499 : limited ? 429 : 502, origin);
 }

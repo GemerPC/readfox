@@ -1,3 +1,4 @@
+import { chat } from './llm.mjs';
 function containsWord(value,key){const normalize=s=>String(s||'').toLowerCase().replace(/[’‘]/g,"'").replace(/[^a-z0-9' -]+/g,' ').replace(/\s+/g,' ').trim();return (' '+normalize(value)+' ').includes(' '+normalize(key)+' ');}
 const MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const FALLBACK = '@cf/meta/llama-4-scout-17b-16e-instruct';
@@ -43,17 +44,17 @@ export async function handleDialogue(payload,env,origin){
  let failure;
  for(const model of [MODEL,FALLBACK]){
   try{
-   const result=await env.AI.run(model,{messages:[{role:'system',content:instruction+voiceInstruction+grounding+'\nALREADY USED BY THE LEARNER: '+JSON.stringify([...used])+'. Never ask them to use these words again. Remaining practice words: '+JSON.stringify(remaining.map(w=>w.key))+'. '+(previousCovered?'The previous vocabulary check is already satisfied by an EARLIER learner message. Credit it as correct even if the latest answer says I already wrote it. Do not ask for repetition.':'')},...history.map(({role,content})=>({role,content})),...(!history.length?[{role:'user',content:'Please begin our conversation.'}]:[])],response_format:{type:'json_schema',json_schema:schema},max_tokens:900,temperature:0.25,stream:false});
+   const result=await chat(env,{messages:[{role:'system',content:instruction+voiceInstruction+grounding+'\nALREADY USED BY THE LEARNER: '+JSON.stringify([...used])+'. Never ask them to use these words again. Remaining practice words: '+JSON.stringify(remaining.map(w=>w.key))+'. '+(previousCovered?'The previous vocabulary check is already satisfied by an EARLIER learner message. Credit it as correct even if the latest answer says I already wrote it. Do not ask for repetition.':'')},...history.map(({role,content})=>({role,content})),...(!history.length?[{role:'user',content:'Please begin our conversation.'}]:[])],response_format:{type:'json_schema',json_schema:schema},max_tokens:900,temperature:0.25},{fallbackModel:model,timeoutMs:20000});
    let raw=result.response??result.choices?.[0]?.message?.content;
    if(typeof raw==='string'){raw=raw.replace(/<think>[\s\S]*?<\/think>/g,'').trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'');raw=JSON.parse(raw);}
    if(!raw||typeof raw.reply!=='string'||!/[a-z]/i.test(raw.reply)||typeof raw.translation!=='string'||!/[а-яё]/i.test(raw.translation)||!['correct','retry','none'].includes(raw.assessment))throw new Error('Invalid AI response');
    if((target&&(!raw.reply.toLowerCase().includes(target.key.toLowerCase())||!(/\b(use|mean|meaning|sentence|say|translate|explain|complete|fill|describe)\b/i.test(raw.reply))))||(previousWord&&!previousCovered&&raw.assessment==='none'))throw new Error('Incomplete tutor response');
    if(history.length&&!target&&!asksIdentity&&/\b(?:my name is|i am fox|i'm fox|nice to meet you|welcome to (?:our |the )?cafe)\b/i.test(raw.reply))throw new Error('Conversation restarted instead of answering');
    if(raw.correction&&!/[а-яё]/i.test(raw.correction))raw.correction='';
-   return respond({reply:text(raw.reply,1600),translation:text(raw.translation,1600),correction:text(raw.correction,1000),hint:text(raw.hint,500),check:!!checkpoint,targetWord:target?.key||'',assessment:previousCovered?'correct':previousWord?raw.assessment:'none',evaluatedWord:previousWord?.key||'',usedWords:[...used],completed:false,source:'cloudflare-workers-ai',model});
-  }catch(error){failure=error;console.warn('ReadFox dialogue retry',model,String(error?.message||error));if(/429|quota|daily limit/i.test(String(error)))break;}
+   return respond({reply:text(raw.reply,1600),translation:text(raw.translation,1600),correction:text(raw.correction,1000),hint:text(raw.hint,500),check:!!checkpoint,targetWord:target?.key||'',assessment:previousCovered?'correct':previousWord?raw.assessment:'none',evaluatedWord:previousWord?.key||'',usedWords:[...used],completed:false,source:result.source,model:result.model||model});
+  }catch(error){failure=error;console.warn('ReadFox dialogue retry',model,String(error?.message||error));if(error?.status===429||/429|quota|daily limit/i.test(String(error)))break;}
  }
- const limited=/429|quota|daily limit/i.test(String(failure));
+ const limited=failure?.status===429||/429|quota|daily limit/i.test(String(failure));
  return respond({error:limited?'Лимит ИИ временно исчерпан. Попробуй позже.':'ИИ сейчас не ответил. Попробуй ещё раз — твоя реплика сохранена.'},limited?429:502);
 }
 

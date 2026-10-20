@@ -209,7 +209,7 @@ function renderGeneration(kind){
 }
 function validateGenerated(payload,kind,level){
  const invalid=()=>{throw Error('ИИ прислал неполный набор заданий. Попробуй подготовить его заново.');};
- if(!payload||payload.kind!==kind||payload.source!=='cloudflare-workers-ai'||!Array.isArray(payload.questions)||payload.questions.length!==(kind==='placement'?12:6))invalid();
+ if(!payload||payload.kind!==kind||!['openrouter-ai','cloudflare-workers-ai'].includes(payload.source)||!Array.isArray(payload.questions)||payload.questions.length!==(kind==='placement'?12:6))invalid();
  const text=(value,max=1600)=>typeof value==='string'&&value.trim().length>0&&value.length<=max;
  const keys=new Set(),bands={A1:0,A2:0,B1:0,B2:0};
  for(const q of payload.questions){
