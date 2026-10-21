@@ -524,6 +524,8 @@ body:has(#lessonDialog[open]),body.academy-generating{overflow:hidden}
 .lesson-feedback p{margin:4px 0;font-size:13px;line-height:1.5}
 .lesson-feedback strong{font-size:14px}
 .lesson-feedback-title{display:flex;align-items:center;gap:7px}
+.lesson-feedback .lesson-say{min-height:36px;margin:8px 0 2px;padding:6px 14px;gap:8px;border-color:currentColor;color:inherit;font-size:15px}
+.lesson-feedback .lesson-say svg{width:18px;height:18px}
 .lesson-feedback svg{width:18px;height:18px;flex:none}
 .lesson-actions,.lesson-result-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:24px;padding-top:20px;border-top:1px solid var(--line)}
 .lesson-actions button,.lesson-result button:not(.lesson-close){min-height:44px;padding:10px 22px;border:1px solid var(--accent);border-radius:10px;background:var(--accent);color:var(--on-accent);font-weight:650}
