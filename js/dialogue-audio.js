@@ -14,7 +14,9 @@
 (function () {
 'use strict';
 const STORAGE = 'readfox.dialogue.audio.v1';
-const CACHE_NAME = 'readfox-tts-v1';
+// v2: Fox speaks with Fish Audio; phrases cached with the previous voice are dropped.
+const CACHE_NAME = 'readfox-tts-v2';
+try { if ('caches' in window) caches.delete('readfox-tts-v1').catch(() => {}); } catch (_) { /* Optional cleanup. */ }
 const BOOST = Object.freeze({ off: 1, loud: 2.4, max: 4 });
 const life = window.ReadFoxAudioLifecycle;
 const IOS = !!life?.isIOS;
@@ -232,14 +234,16 @@ function createSynthesizer() {
         let detail; try { detail = await response.json(); } catch (_) {}
         throw Error(detail?.error || 'Озвучка недоступна. Повтори звук или выбери системный голос.');
       }
-      return readAudio(response, j);
+      const audio = await readAudio(response, j);
+      return { ...audio, voice: response.headers.get('X-ReadFox-Voice') || '' };
     }
   }
   async function fetchEntry(text, j, signal) {
     let entry = entries.get(text);
     if (entry) { entries.delete(text); entries.set(text, entry); return entry; }
     entry = await readStored(text);
-    if (!entry) { entry = await download(text, j, signal); void writeStored(text, entry); }
+    // Only Fish Audio phrases are kept between visits, so a fallback voice is not replayed later.
+    if (!entry) { entry = await download(text, j, signal); if (entry.voice.startsWith('fish-audio/')) void writeStored(text, entry); }
     remember(text, entry);
     return entry;
   }
