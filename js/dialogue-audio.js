@@ -14,9 +14,7 @@
 (function () {
 'use strict';
 const STORAGE = 'readfox.dialogue.audio.v1';
-// v2: Fox speaks with Fish Audio; phrases cached with the previous voice are dropped.
-const CACHE_NAME = 'readfox-tts-v2';
-try { if ('caches' in window) caches.delete('readfox-tts-v1').catch(() => {}); } catch (_) { /* Optional cleanup. */ }
+const CACHE_PREFIX = 'readfox-tts-';
 const BOOST = Object.freeze({ off: 1, loud: 2.4, max: 4 });
 const life = window.ReadFoxAudioLifecycle;
 const IOS = !!life?.isIOS;
@@ -47,10 +45,31 @@ const entries = new Map(); // text -> { bytes, type, buffer? } shared by all syn
 const loading = new Set();
 
 function cacheKey(text) { return location.origin + '/__readfox-tts/' + encodeURIComponent(text.toLowerCase()); }
+function speechEndpoint() { return window.READFOX_CONFIG?.speechEndpoint || 'https://readfox.gemerpc.workers.dev/speech'; }
+// Saved phrases belong to one Fish voice: the server names it, and caches of other voices are removed.
+let voiceKeyRequest = null;
+function currentVoiceKey() {
+  if (!voiceKeyRequest) {
+    voiceKeyRequest = fetch(speechEndpoint()).then(response => response.ok ? response.json() : null)
+      .then(info => typeof info?.voiceKey === 'string' && /^[0-9a-f]{12}$/.test(info.voiceKey) ? info.voiceKey : '')
+      .catch(() => '');
+    voiceKeyRequest.then(key => {
+      if (!key || !('caches' in window)) return;
+      caches.keys().then(names => names.filter(name => name.startsWith(CACHE_PREFIX) && name !== CACHE_PREFIX + key).forEach(name => caches.delete(name))).catch(() => {});
+    });
+  }
+  return voiceKeyRequest;
+}
+async function phraseCache() {
+  const key = await currentVoiceKey();
+  return key && 'caches' in window ? { key, cache: await caches.open(CACHE_PREFIX + key) } : null;
+}
 async function readStored(text) {
   try {
     if (!('caches' in window) || text.length > 120) return null;
-    const cache = await caches.open(CACHE_NAME);
+    const store = await phraseCache();
+    if (!store) return null;
+    const cache = store.cache;
     const hit = await cache.match(cacheKey(text));
     if (!hit) return null;
     return { bytes: await hit.arrayBuffer(), type: hit.headers.get('Content-Type') || 'audio/wav' };
@@ -59,7 +78,9 @@ async function readStored(text) {
 async function writeStored(text, entry) {
   try {
     if (!('caches' in window) || text.length > 120) return;
-    const cache = await caches.open(CACHE_NAME);
+    const store = await phraseCache();
+    if (!store || entry.voiceKey !== store.key) return;
+    const cache = store.cache;
     await cache.put(cacheKey(text), new Response(entry.bytes.slice(0), { headers: { 'Content-Type': entry.type } }));
     const keys = await cache.keys();
     for (const request of keys.slice(0, Math.max(0, keys.length - 300))) await cache.delete(request);
@@ -219,7 +240,7 @@ function createSynthesizer() {
     return { bytes: bytes.buffer, type };
   }
   async function download(text, j, signal) {
-    const endpoint = window.READFOX_CONFIG?.speechEndpoint || 'https://readfox.gemerpc.workers.dev/speech';
+    const endpoint = speechEndpoint();
     for (let attempt = 0; attempt < 2; attempt++) {
       log('[TTS_REQUEST]', { attempt: attempt + 1, characters: text.length });
       const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }), signal });
@@ -235,15 +256,15 @@ function createSynthesizer() {
         throw Error(detail?.error || 'Озвучка недоступна. Повтори звук или выбери системный голос.');
       }
       const audio = await readAudio(response, j);
-      return { ...audio, voice: response.headers.get('X-ReadFox-Voice') || '' };
+      return { ...audio, voiceKey: response.headers.get('X-ReadFox-Voice-Key') || '' };
     }
   }
   async function fetchEntry(text, j, signal) {
     let entry = entries.get(text);
     if (entry) { entries.delete(text); entries.set(text, entry); return entry; }
     entry = await readStored(text);
-    // Only Fish Audio phrases are kept between visits, so a fallback voice is not replayed later.
-    if (!entry) { entry = await download(text, j, signal); if (entry.voice.startsWith('fish-audio/')) void writeStored(text, entry); }
+    // Only phrases in the current Fish voice are kept between visits; fallback audio has no voice key.
+    if (!entry) { entry = await download(text, j, signal); void writeStored(text, entry); }
     remember(text, entry);
     return entry;
   }
