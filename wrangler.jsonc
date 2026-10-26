@@ -5,6 +5,11 @@
   "ai": {
     "binding": "AI"
   },
+  // Run API requests near us-east so OpenRouter models (Fish Audio voice) are reached from a supported region;
+  // static assets are still served from the data center nearest to the visitor.
+  "placement": {
+    "region": "aws:us-east-1"
+  },
   "assets": {
     "directory": "./.cloudflare-public",
     "binding": "ASSETS",

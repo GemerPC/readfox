@@ -31,7 +31,7 @@ async function fishRequest(env,text,timeoutMs){
  try{
   const fetcher=typeof env.OPENROUTER_FETCH==='function'?env.OPENROUTER_FETCH:fetch;
   const response=await fetcher(SPEECH_ENDPOINT,{method:'POST',headers:{Authorization:`Bearer ${env.OPENROUTER_API_KEY}`,'Content-Type':'application/json','HTTP-Referer':'https://gemerpc.github.io/readfox/','X-Title':'ReadFox'},body:JSON.stringify({model:VOICE_MODEL,input:text,response_format:'mp3',...(env.FISH_VOICE_ID?{voice:env.FISH_VOICE_ID}:{})}),signal:controller.signal});
-  if(!response.ok){const error=Error('Fish Audio speech failed');error.status=response.status;error.detail=(await response.text().catch(()=>'')).slice(0,300);throw error;}
+  if(!response.ok){const error=Error('Fish Audio speech failed'),body=await response.text().catch(()=>'');error.status=response.status;try{error.detail=String(JSON.parse(body)?.error?.message||'');}catch(_){error.detail=body;}error.detail=error.detail.slice(0,300);throw error;}
   return await audioBytes(response);
  }catch(error){if(error?.name==='AbortError'){const timeout=Error('Fish Audio speech timed out');timeout.status='timeout';throw timeout;}throw error;}
  finally{clearTimeout(timer);}
@@ -60,11 +60,11 @@ export async function handleSpeech(request,env,origin){
  catch(error){return json(error.message==='too-large'?'Слишком длинный запрос.':'Некорректный JSON.',error.message==='too-large'?413:400,origin);}
  const text=typeof payload?.text==='string'?payload.text.trim():'';
  if(!text||text.length>1600||!/[a-z]/i.test(text))return json('Нужен английский текст от 1 до 1600 символов.',400,origin);
- // Why Fish Audio was skipped is reported in X-ReadFox-Voice-Fallback (an HTTP status, "timeout", "error" or "no-key").
+ // Why Fish Audio was skipped is reported in X-ReadFox-Voice-Fallback: an HTTP status with OpenRouter's message, "timeout", "error" or "no-key".
  let fallback='no-key';
  if(env.OPENROUTER_API_KEY){
   try{const bytes=await fishSpeech(env,text);return audioResponse(bytes,VOICE_MODEL,origin,await voiceKey(env));}
-  catch(error){fallback=String(error.status||'error');console.warn('ReadFox Fish Audio speech failed, using MeloTTS',{status:error.status||null,detail:error.detail||String(error?.message||error)});}
+  catch(error){fallback=(String(error.status||'error')+' '+String(error.detail||'').replace(/[^\x20-\x7e]+/g,' ')).trim().slice(0,120);console.warn('ReadFox Fish Audio speech failed, using MeloTTS',{status:error.status||null,detail:error.detail||String(error?.message||error)});}
  }
  if(!env.AI||typeof env.AI.run!=='function')return json('Сервис озвучки пока недоступен.',503,origin);
  try{const result=await env.AI.run(MODEL,{prompt:text,lang:'en'});const bytes=await audioBytes(result);return audioResponse(bytes,MODEL,origin,'',fallback);}
