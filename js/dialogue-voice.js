@@ -17,7 +17,7 @@
     let micReady = true, micBarrier = Promise.resolve(true);
     let audioReady = true, audioBarrier = Promise.resolve(true);
     let restartTimer = null, speechTimer = null;
-    let autoListen = true, resetOutput = false;
+    let autoListen = true, resetOutput = false, quietEnd = false;
     let routeSettled = true, routeBarrier = Promise.resolve(true), routeTimer = null;
     let routeOwned = false, priorRoute = 'auto', lastRoute = '';
     let audioSession = null;
@@ -352,7 +352,7 @@
           clearTimeout(speechTimer); speechTimer = null;
           spoken.onstart = spoken.onend = spoken.onerror = null;
           utterance = null; audioReady = true; audioBarrier = Promise.resolve(true);
-          if (!autoListen) { pause('Проверка звука завершена. Нажми «Продолжить голосом», когда будешь готов.'); return; }
+          if (!autoListen) { if (quietEnd) stop(); else pause('Проверка звука завершена. Нажми «Продолжить голосом», когда будешь готов.'); return; }
           set('starting', 'Твоя очередь…', '');
           restartTimer = setTimeout(function () { restartTimer = null; if (current(epoch)) listen(); }, 300);
         };
@@ -368,7 +368,7 @@
         catch (_) { spoken.onerror(); }
       });
     }
-    function start(text, resumeListening = true, recoverOutput = false) {
+    function start(text, resumeListening = true, recoverOutput = false, endQuietly = false) {
       if (!supported) {
         error(window.isSecureContext === false
           ? 'Голосовой чат работает по HTTPS или на localhost. Здесь можно использовать клавиатуру.'
@@ -377,7 +377,7 @@
       }
       if (document.hidden) { pause('Открой вкладку и нажми микрофон, чтобы начать разговор.'); return; }
       generation += 1; clearFlowTimers(); retireMicrophone(); retireSpeech();
-      autoListen = resumeListening; resetOutput = recoverOutput;
+      autoListen = resumeListening; resetOutput = recoverOutput; quietEnd = endQuietly;
       window.ReadFoxPlayback?.stop?.();window.ReadFoxSound?.setVoiceActive?.(true,'dialogue');
       if(typeof text==='string'&&text.trim()||recoverOutput)synthesis.prepare?.(recoverOutput);
       state.active = true; state.interim = ''; emptyRestarts = 0;
@@ -386,9 +386,11 @@
       else listen();
     }
     function recover(text) { start(text || 'Hello! Can you hear me clearly?', false, true); }
+    // Reads one phrase aloud; a running voice conversation resumes listening afterwards, otherwise the mic stays off.
+    function say(text) { start(text, state.active, true, !state.active); }
     function finish() { finishCapture(true); }
     function getState() { return Object.assign({}, state); }
-    return Object.freeze({ start: start, pause: pause, stop: stop, waiting: waiting, speak: speak, listen: listen, finish: finish, getState: getState, recover: recover });
+    return Object.freeze({ start: start, pause: pause, stop: stop, waiting: waiting, speak: speak, listen: listen, finish: finish, getState: getState, recover: recover, say: say });
   }
   window.ReadFoxDialogueVoice = Object.freeze({ create: create });
 }());

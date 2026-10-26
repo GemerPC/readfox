@@ -524,7 +524,15 @@ body:has(#lessonDialog[open]),body.academy-generating{overflow:hidden}
 .lesson-feedback p{margin:4px 0;font-size:13px;line-height:1.5}
 .lesson-feedback strong{font-size:14px}
 .lesson-feedback-title{display:flex;align-items:center;gap:7px}
-.lesson-feedback .lesson-say{min-height:36px;margin:8px 0 2px;padding:6px 14px;gap:8px;border-color:currentColor;color:inherit;font-size:15px}
+.lesson-say-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:8px 0 2px}
+.lesson-feedback .lesson-say{min-height:36px;padding:6px 14px;gap:8px;border-color:currentColor;color:inherit;font-size:15px}
+.lesson-feedback .lesson-ipa{color:inherit;opacity:.85}
+.lesson-word-card{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:0 0 18px}
+.lesson-word-say{font-size:18px}
+.lesson-ipa{font-size:16px;color:var(--ink-soft)}
+.lesson-ipa:empty{display:none}
+.lesson-prompt-word{padding:0;border:0;border-bottom:2px dotted var(--accent);background:none;color:inherit;font:inherit;cursor:pointer}
+.lesson-prompt-word:hover,.lesson-prompt-word.is-speaking{color:var(--accent-ink)}
 .lesson-feedback .lesson-say svg{width:18px;height:18px}
 .lesson-feedback svg{width:18px;height:18px;flex:none}
 .lesson-actions,.lesson-result-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:24px;padding-top:20px;border-top:1px solid var(--line)}
@@ -1138,6 +1146,9 @@ body.dialogue-live .site-header,body.dialogue-live footer{display:none}
 .dlg-slide-text.is-m{font-size:23px;line-height:1.35}
 .dlg-slide-text.is-s{font-size:19px;font-weight:500;line-height:1.5}
 .dlg-slide.is-user .dlg-slide-who,.dlg-slide.is-user .dlg-slide-text{color:var(--accent-ink)}
+.dlg-say{padding:0;border:0;background:none;color:inherit;font:inherit;letter-spacing:inherit;line-height:inherit;text-align:inherit;text-wrap:inherit;cursor:pointer;transition:color .2s ease,opacity .2s ease}
+.dlg-say:hover{opacity:.8}
+.dlg-say.is-saying{color:var(--accent);opacity:1}
 .dlg-interim .dlg-slide-text{opacity:.55;transition:opacity .2s}
 .dlg-interim[hidden]{display:none!important}
 .dlg-slide-note{max-width:520px;margin:0 0 6px;font-size:13px;line-height:1.5;color:var(--ink-soft)}

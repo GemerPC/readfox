@@ -4420,6 +4420,7 @@ function showLocalWordTooltip(anchor, token, forcedSentence){
 }
 
 window.ReadFoxBridge=Object.freeze({
+  transcribe:(word,context)=>fetchTranscription(word,3500,context),
   getWords:()=>Object.entries(state.userWords).map(([key,word])=>({key,...word})),
   getStats:()=>({learning:Object.values(state.userWords).filter(w=>w.status==="learning").length,known:Object.values(state.userWords).filter(w=>w.status==="known").length,texts:state.readTextIds.length,due:Object.values(state.userWords).filter(w=>isReviewDue(w)).length}),
   addWords(entries){ for(const entry of entries){ const key=String(entry.key||"").trim().toLowerCase(); if(!key || ["__proto__","constructor","prototype"].includes(key) || state.userWords[key]) continue; addWord(key,String(entry.translation||""),"learning",String(entry.example||""),{sentenceTranslation:entry.sentenceTranslation||localContextTranslation(entry.example||""),source:"dictionary"}); } },
