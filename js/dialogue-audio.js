@@ -42,6 +42,7 @@ const MAX_BYTES = 6 * 1024 * 1024;
 const MAX_CACHED = 24;
 const MAX_CACHED_BYTES = 12 * 1024 * 1024;
 const entries = new Map(); // text -> { bytes, type, buffer? } shared by all synthesizers
+let lastPlayback = null; // { origin, voice, fallback } of the latest phrase, shown in the dialogue settings
 const loading = new Set();
 
 function cacheKey(text) { return location.origin + '/__readfox-tts/' + encodeURIComponent(text.toLowerCase()); }
@@ -72,7 +73,7 @@ async function readStored(text) {
     const cache = store.cache;
     const hit = await cache.match(cacheKey(text));
     if (!hit) return null;
-    return { bytes: await hit.arrayBuffer(), type: hit.headers.get('Content-Type') || 'audio/wav' };
+    return { bytes: await hit.arrayBuffer(), type: hit.headers.get('Content-Type') || 'audio/wav', voice: hit.headers.get('X-ReadFox-Voice') || '', origin: 'cache' };
   } catch (_) { return null; }
 }
 async function writeStored(text, entry) {
@@ -81,7 +82,7 @@ async function writeStored(text, entry) {
     const store = await phraseCache();
     if (!store || entry.voiceKey !== store.key) return;
     const cache = store.cache;
-    await cache.put(cacheKey(text), new Response(entry.bytes.slice(0), { headers: { 'Content-Type': entry.type } }));
+    await cache.put(cacheKey(text), new Response(entry.bytes.slice(0), { headers: { 'Content-Type': entry.type, 'X-ReadFox-Voice': entry.voice || '' } }));
     const keys = await cache.keys();
     for (const request of keys.slice(0, Math.max(0, keys.length - 300))) await cache.delete(request);
   } catch (_) { /* Cache Storage is a bonus only. */ }
@@ -256,12 +257,12 @@ function createSynthesizer() {
         throw Error(detail?.error || 'Озвучка недоступна. Повтори звук или выбери системный голос.');
       }
       const audio = await readAudio(response, j);
-      return { ...audio, voiceKey: response.headers.get('X-ReadFox-Voice-Key') || '' };
+      return { ...audio, voiceKey: response.headers.get('X-ReadFox-Voice-Key') || '', voice: response.headers.get('X-ReadFox-Voice') || '', fallback: response.headers.get('X-ReadFox-Voice-Fallback') || '', origin: 'network' };
     }
   }
   async function fetchEntry(text, j, signal) {
     let entry = entries.get(text);
-    if (entry) { entries.delete(text); entries.set(text, entry); return entry; }
+    if (entry) { entries.delete(text); entries.set(text, entry); entry.origin = 'memory'; return entry; }
     entry = await readStored(text);
     // Only phrases in the current Fish voice are kept between visits; fallback audio has no voice key.
     if (!entry) { entry = await download(text, j, signal); void writeStored(text, entry); }
@@ -343,6 +344,7 @@ function createSynthesizer() {
       if (!current(j)) return;
       const entry = await fetchEntry(j.text, j, j.abort.signal);
       if (!current(j)) return;
+      lastPlayback = { origin: entry.origin || 'network', voice: entry.voice || '', fallback: entry.fallback || '' };
       if (wantsGraph()) {
         let graphError = graphFailure;
         try { if (await playGraph(j, entry)) return; graphError = graphError || Error('Браузер приостановил звук. Нажми «Повторить звук».'); }
@@ -356,7 +358,7 @@ function createSynthesizer() {
   }
 
   function speak(utterance) {
-    if (settings.engine === 'system') { native.speak(utterance); return; }
+    if (settings.engine === 'system') { lastPlayback = { origin: 'system', voice: '', fallback: '' }; native.speak(utterance); return; }
     cancel(true);
     const rate = Math.min(1.25, Math.max(0.75, Number(utterance.rate) || 0.95));
     const j = { id: ++serial, utterance, text: String(utterance.text || '').trim(), rate, abort: new AbortController(), playing: false, cancelled: false, source: null, timer: null, transport: '' };
@@ -383,5 +385,5 @@ function createSynthesizer() {
     getVoices() { return settings.engine === 'system' ? (native?.getVoices() || []) : []; }
   };
 }
-window.ReadFoxDialogueAudio = Object.freeze({ supported, settings: () => ({ ...settings }), configure, createSynthesizer, boostLevels: Object.freeze(Object.keys(BOOST)) });
+window.ReadFoxDialogueAudio = Object.freeze({ supported, settings: () => ({ ...settings }), configure, createSynthesizer, lastPlayback: () => lastPlayback && { ...lastPlayback }, boostLevels: Object.freeze(Object.keys(BOOST)) });
 })();

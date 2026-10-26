@@ -92,7 +92,14 @@ function watchLog(log){
 function settingsMarkup(s){
  const audio=window.ReadFoxDialogueAudio,a=audio?.settings()||{engine:'system',boost:'off'},system=a.engine==='system';
  const seg=(name,value,label,current,off)=>`<button type="button" class="dlg-seg" data-dialogue-${name}="${value}" aria-pressed="${current===value}" ${off?'disabled':''}>${label}</button>`;
- return `<div class="dlg-sheet${settingsOpen?' is-open':''}" id="dialogueSettings" role="region" aria-label="Настройки диалога" ${settingsOpen?'':'inert'}><div class="dlg-sheet-body"><section><div class="dlg-sheet-head"><span>Слова для разговора</span><strong>${s.used.length} / ${s.deck.length}</strong></div><div class="dialogue-words">${s.deck.map(w=>chip(w,s.used.includes(w.key))).join('')}</div></section><section class="dlg-sheet-row"><div class="dlg-setting"><span>Голос Фокса</span><div class="dlg-segmented">${seg('engine','audio','Улучшенный',a.engine,!audio?.supported)}${seg('engine','system','Системный',a.engine,false)}</div></div><div class="dlg-setting"><span>Громкость</span><div class="dlg-segmented">${seg('boost','off','Обычная',a.boost,system)}${seg('boost','loud','Громче',a.boost,system)}${seg('boost','max','Максимум',a.boost,system)}</div></div></section><section class="dlg-sheet-actions"><button type="button" class="dlg-action" data-dialogue-action="voice-again">↻ Прослушать ответ</button><button type="button" class="dlg-action" data-dialogue-action="theme">☾ Оформление</button><button type="button" class="dlg-action" data-dialogue-action="exit">Другая тема</button></section><p class="dlg-sheet-meta">${esc(topics[s.topic].title)} · ${esc(level())} · проверки ${s.correct} / ${s.checked}</p></div></div>`;
+ return `<div class="dlg-sheet${settingsOpen?' is-open':''}" id="dialogueSettings" role="region" aria-label="Настройки диалога" ${settingsOpen?'':'inert'}><div class="dlg-sheet-body"><section><div class="dlg-sheet-head"><span>Слова для разговора</span><strong>${s.used.length} / ${s.deck.length}</strong></div><div class="dialogue-words">${s.deck.map(w=>chip(w,s.used.includes(w.key))).join('')}</div></section><section class="dlg-sheet-row"><div class="dlg-setting"><span>Голос Фокса</span><div class="dlg-segmented">${seg('engine','audio','Улучшенный',a.engine,!audio?.supported)}${seg('engine','system','Системный',a.engine,false)}</div></div><div class="dlg-setting"><span>Громкость</span><div class="dlg-segmented">${seg('boost','off','Обычная',a.boost,system)}${seg('boost','loud','Громче',a.boost,system)}${seg('boost','max','Максимум',a.boost,system)}</div></div></section><section class="dlg-sheet-actions"><button type="button" class="dlg-action" data-dialogue-action="voice-again">↻ Прослушать ответ</button><button type="button" class="dlg-action" data-dialogue-action="theme">☾ Оформление</button><button type="button" class="dlg-action" data-dialogue-action="exit">Другая тема</button></section><p class="dlg-sheet-meta">${esc(topics[s.topic].title)} · ${esc(level())} · проверки ${s.correct} / ${s.checked}</p><p class="dlg-sheet-meta" id="dialogueVoiceInfo">${esc(voiceInfo())}</p></div></div>`;
+}
+// Which voice actually read the last phrase, so a wrong voice can be told apart from a stale page or a fallback.
+function voiceInfo(){
+ const p=window.ReadFoxDialogueAudio?.lastPlayback?.(),build=(document.querySelector('script[src*="dialogue-audio.js"]')?.src.match(/[?&]v=([\w-]+)/)||[])[1]||'—';
+ const fish=v=>/^fish-audio\//.test(v||'');
+ const said=!p?'Фокс ещё ничего не озвучил':p.origin==='system'?'голос устройства (выбран «Системный»)':fish(p.voice)?'Fish Audio'+(p.origin==='network'?'':' · из памяти браузера'):p.voice?'запасной голос Cloudflare'+(p.fallback?' · Fish Audio не ответил ('+p.fallback+')':''):'голос из старой памяти браузера';
+ return 'Последняя фраза: '+said+' · сборка '+build;
 }
 function syncSettings(){
  const a=window.ReadFoxDialogueAudio?.settings();if(!a)return;
@@ -101,6 +108,7 @@ function syncSettings(){
 }
 function toggleSettings(open=!settingsOpen){
  settingsOpen=open;const sheet=document.getElementById('dialogueSettings');if(sheet){sheet.classList.toggle('is-open',open);sheet.inert=!open;}
+ const info=document.getElementById('dialogueVoiceInfo');if(open&&info)info.textContent=voiceInfo();
  document.querySelector('[data-dialogue-action="settings"]')?.setAttribute('aria-expanded',String(open));
 }
 function headerMarkup(s){
