@@ -1,6 +1,6 @@
 const MODEL='@cf/myshell-ai/melotts';
-// Fox's voice: Fish Audio on OpenRouter; MeloTTS on Workers AI answers when it is unavailable (the free tier is rate limited).
-const VOICE_MODEL='fish-audio/s2.1-pro-free:free';
+// Fox's voice: Fish Audio S2.1 Pro on OpenRouter (paid per character); MeloTTS on Workers AI answers when it is unavailable.
+const VOICE_MODEL='fish-audio/s2.1-pro';
 const SPEECH_ENDPOINT='https://openrouter.ai/api/v1/audio/speech';
 const MAX_AUDIO=6*1024*1024;
 function headers(origin){return {'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Vary':'Origin','Access-Control-Expose-Headers':'X-ReadFox-Voice, X-ReadFox-Voice-Key, X-ReadFox-Voice-Fallback',...(origin?{'Access-Control-Allow-Origin':origin}:{})};}
@@ -36,7 +36,7 @@ async function fishRequest(env,text,timeoutMs){
  }catch(error){if(error?.name==='AbortError'){const timeout=Error('Fish Audio speech timed out');timeout.status='timeout';throw timeout;}throw error;}
  finally{clearTimeout(timer);}
 }
-// The free tier fails now and then (rate limits, busy provider); one quick retry keeps Fox in the same voice more often.
+// A brief failure (rate limit, busy provider, timeout) gets one quick retry, so Fox stays in the same voice.
 async function fishSpeech(env,text){
  try{return await fishRequest(env,text,20000);}
  catch(error){
