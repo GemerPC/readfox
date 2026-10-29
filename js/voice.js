@@ -60,7 +60,9 @@
     const personal = (Array.isArray(saved) ? saved : []).filter(word => word && /^[a-z][a-z'’ -]{0,79}$/i.test(String(word.key || '').trim())).map(word => {
       const key = String(word.key).trim().toLowerCase();
       const known = CURATED.find(item => normalize(item.key) === normalize(key));
-      return { ...(known || {}), key, translation: String(word.translation || (known && known.translation) || ''), example: String(word.example || (known && known.example) || ''), personal: true };
+      const example = String(word.example || (known && known.example) || '');
+      const sentenceTranslation = word.example && word.contextSentenceTranslations && typeof word.contextSentenceTranslations[word.example] === 'string' ? word.contextSentenceTranslations[word.example] : '';
+      return { ...(known || {}), key, translation: String(word.translation || (known && known.translation) || ''), example, sentenceTranslation, personal: true };
     });
     const frequent = FREQUENT[state.level].split(';').map(pair => {
       const [key, translation] = pair.split('|');
@@ -76,6 +78,46 @@
     }).slice(0, 8));
   }
   function current() { return state.deck[state.index]; }
+  // After a word is recognised, a sentence with exactly that word is shown: the word's own example when it has one,
+  // otherwise one written by the AI for the learner's level (kept in localStorage so a word is asked for only once).
+  const EXAMPLE_KEY = 'readfox.voice.examples.v1';
+  const examples = new Map();
+  try { for (const [key, value] of Object.entries(JSON.parse(readSetting(EXAMPLE_KEY) || '{}'))) if (value && typeof value.sentence === 'string') examples.set(key, value); } catch (_) { /* Starts empty. */ }
+  function wordPattern(word) { return new RegExp('(^|[^A-Za-z])(' + String(word).trim().replace(/[^A-Za-z'’ -]/g, '').replace(/['’]/g, "['’]").replace(/[ -]/g, '[ -]') + ')(?![A-Za-z])', 'i'); }
+  function exampleKey(word) { return normalize(word.key) + '|' + state.level; }
+  function exampleFor(word) {
+    if (word.example && wordPattern(word.key).test(word.example)) return { sentence: word.example, translation: word.sentenceTranslation || '' };
+    const saved = examples.get(exampleKey(word));
+    return saved && saved.sentence ? saved : null;
+  }
+  function exampleEndpoint() {
+    const endpoint = window.READFOX_CONFIG && window.READFOX_CONFIG.aiGeneratorEndpoint || '';
+    return /\/generate\/?$/i.test(endpoint) ? endpoint.replace(/\/generate\/?$/i, '/example') : '';
+  }
+  function loadExample(word) {
+    const key = exampleKey(word), endpoint = exampleEndpoint();
+    if (!word || exampleFor(word) || examples.has(key) || !endpoint) return;
+    examples.set(key, { loading: true });
+    fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ word: word.key, level: state.level }) })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => {
+        if (!data || typeof data.sentence !== 'string' || !wordPattern(word.key).test(data.sentence)) { examples.set(key, { failed: true }); return; }
+        examples.set(key, { sentence: data.sentence, translation: typeof data.translation === 'string' ? data.translation : '' });
+        const stored = {};
+        for (const [k, v] of [...examples.entries()].filter(([, v]) => v.sentence).slice(-200)) stored[k] = v;
+        saveSetting(EXAMPLE_KEY, JSON.stringify(stored));
+      })
+      .catch(() => examples.set(key, { failed: true }))
+      .finally(() => { if (current() === word && viewActive) render(); });
+  }
+  function exampleHtml(word) {
+    if (!state.result || state.result.kind !== 'success') return '';
+    const example = exampleFor(word), pending = examples.get(exampleKey(word));
+    if (!example) return pending && pending.loading ? '<section class="voice-sentence voice-sentence--loading" aria-live="polite"><span class="voice-eyebrow">Пример с этим словом</span><p>Подбираем предложение…</p></section>' : '';
+    const match = example.sentence.match(wordPattern(word.key));
+    const sentence = match ? escape(example.sentence.slice(0, match.index + match[1].length)) + '<mark>' + escape(match[2]) + '</mark>' + escape(example.sentence.slice(match.index + match[0].length)) : escape(example.sentence);
+    return '<section class="voice-sentence" aria-live="polite"><span class="voice-eyebrow">Пример с этим словом</span><p class="voice-sentence-text" lang="en">' + sentence + '</p>' + (example.translation ? '<p class="voice-sentence-translation">' + escape(example.translation) + '</p>' : '') + '<button type="button" class="voice-btn voice-btn--listen voice-sentence-listen" data-voice="sentence"' + (!canSpeak ? ' disabled' : '') + '>' + SOUND + 'Послушать предложение</button></section>';
+  }
   function root() { return document.getElementById('speakingContent'); }
   function activeSession(epoch) { return epoch === sessionEpoch && state.sessionWanted && state.consent && viewActive && !document.hidden; }
   function clearRecognitionTimers() { clearTimeout(requestTimer); clearTimeout(idleTimer); clearTimeout(feedbackTimer); clearTimeout(finalizeTimer); requestTimer = idleTimer = feedbackTimer = finalizeTimer = null; }
@@ -211,7 +253,7 @@
       state.partial = '';
       render();
       if (!recognition) scheduleResume(epoch);
-    }, 1250);
+    }, exampleFor(current()) ? 4500 : 1250);
   }
   async function launchRecognition(epoch) {
     if (!activeSession(epoch) || state.playing || recognition) return;
@@ -333,7 +375,7 @@
     render();
     launchRecognition(sessionEpoch);
   }
-  async function speak(slow) {
+  async function speak(slow, phrase) {
     if (!canSpeak) return;
     clearFlowTimers();
     stopSpeech();
@@ -341,7 +383,7 @@
     if (synth) synth.prepare();
     const id = speechToken;
     const epoch = sessionEpoch;
-    const text = current().key;
+    const text = phrase || current().key;
     state.playing = true;
     state.phase = 'speaking';
     const barrier = retireRecognition();
@@ -447,7 +489,7 @@
       '<article class="voice-word-card' + (state.sessionWanted ? ' is-listening' : '') + '"><div class="voice-card-top"><span class="voice-source">' + (word.personal ? 'Из твоего словаря' : 'Частотные слова · ' + escape(state.level)) + '</span><span>' + (state.index + 1) + ' / ' + state.deck.length + (state.completed.has(word.key) ? ' · ✓' : '') + '</span></div>' +
       '<div class="voice-word"><h2 class="voice-target" lang="en">' + escape(word.key) + '</h2>' + (word.ipa ? '<p class="voice-ipa" lang="en">' + escape(word.ipa) + '</p>' : '') + '<p class="voice-translation">' + escape(word.translation) + '</p><p class="voice-inline-feedback" role="status" aria-live="polite" hidden></p></div>' +
       '<div class="voice-listen-actions"><button type="button" class="voice-btn voice-btn--listen" data-voice="listen"' + (!canSpeak ? ' disabled' : '') + '>' + SOUND + (state.playing ? 'Слушаем…' : 'Послушать') + '</button><button type="button" class="voice-btn voice-btn--slow" data-voice="slow"' + (!canSpeak ? ' disabled' : '') + '><span aria-hidden="true">0.8×</span> Медленно</button></div>' +
-      (word.example ? '<p class="voice-example" lang="en">“' + escape(word.example) + '”</p>' : '') +
+      exampleHtml(word) +
       '<div class="voice-recording"><div class="voice-wave' + (phase === 'listening' ? ' is-active' : '') + '" aria-hidden="true">' + '<i></i>'.repeat(13) + '</div><button type="button" class="voice-mic' + (state.sessionWanted || state.playing ? ' is-active' : '') + '" data-voice="mic" aria-label="' + escape(state.sessionWanted || state.playing ? 'Остановить микрофон и озвучивание' : micLabel) + '"' + (!Recognition || !state.consent ? ' disabled' : '') + '>' + (state.sessionWanted || state.playing ? '<span class="voice-stop-square" aria-hidden="true"></span>' : MIC) + '</button><p class="voice-mic-label">' + micLabel + '</p>' +
       (state.sessionWanted || state.playing ? '<button type="button" class="voice-cancel" data-voice="cancel">Остановить</button>' : '<span class="voice-mic-help">' + (!Recognition ? 'Распознавание недоступно в этом браузере' : !state.consent ? 'Разреши распознавание один раз ниже' : state.continuous ? 'Один старт — весь круг вслух' : 'Произнеси слово или фразу на карточке') + '</span>') + '</div>' +
       (Recognition ? '<label class="voice-continuous"><input type="checkbox" id="voiceContinuous"' + (state.continuous ? ' checked' : '') + '><span><strong>Говорить без пауз</strong><small>Следующее слово появится автоматически</small></span><span class="voice-switch" aria-hidden="true"></span></label>' : '') + '</article>' +
@@ -456,6 +498,7 @@
       (state.consent ? privacyHtml() : '') + '</aside></div></div>';
     paintWordFeedback();
     if (synth && word && viewActive && !document.hidden) synth.preload(word.key);
+    if (word && viewActive && !document.hidden) loadExample(word);
     if (!mounted) {
       container.addEventListener('click', event => {
         const button = event.target.closest('[data-voice]');
@@ -463,6 +506,7 @@
         const action = button.dataset.voice;
         if (action === 'listen') speak(false);
         if (action === 'slow') speak(true);
+        if (action === 'sentence') { const example = exampleFor(current()); if (example) speak(false, example.sentence); }
         if (action === 'mic') { if (state.sessionWanted || state.playing) stop(); else startSession(); }
         if (action === 'cancel') { stop(false); state.result = { kind: 'idle', title: 'Микрофон выключен', text: 'Твой прогресс сохранён. Продолжи, когда захочешь.' }; render(); }
         if (action === 'next') navigate(1);

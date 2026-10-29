@@ -680,6 +680,12 @@ body:has(#lessonDialog[open]),body.academy-generating{overflow:hidden}
 .voice-btn--next:not(:disabled):hover{background:var(--ink);opacity:.88}
 .voice-btn:disabled,.voice-mic:disabled{opacity:.45;cursor:not-allowed}
 .voice-example{margin-top:20px;font-size:14px;font-style:italic;line-height:1.7;color:var(--ink-soft);overflow-wrap:anywhere}
+.voice-sentence{margin-top:18px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-2);text-align:left;animation:dlg-in .25s ease both}
+.voice-sentence-text{margin:6px 0 0;font-size:18px;font-weight:550;line-height:1.5;color:var(--ink);overflow-wrap:anywhere}
+.voice-sentence-text mark{padding:0 2px;border-radius:4px;background:var(--accent-bg);color:var(--accent-ink)}
+.voice-sentence-translation{margin:4px 0 0;font-size:14px;line-height:1.5;color:var(--ink-soft)}
+.voice-sentence .voice-sentence-listen{margin-top:10px}
+.voice-sentence--loading p{margin:6px 0 0;font-size:14px;color:var(--ink-soft)}
 .voice-recording{margin-top:22px;padding-top:6px;border-top:1px solid var(--line)}
 .voice-wave{display:flex;align-items:center;justify-content:center;gap:4px;height:36px;margin:6px auto 12px}
 .voice-wave i{display:block;width:3px;height:6px;border-radius:8px;background:var(--line-strong)}
