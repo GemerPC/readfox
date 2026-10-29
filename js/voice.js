@@ -32,8 +32,10 @@
   const canSpeak = Boolean(window.SpeechSynthesisUtterance && (synth || window.speechSynthesis));
   function readSetting(key) { try { return window.localStorage.getItem(key); } catch (_) { return null; } }
   function saveSetting(key, value) { try { window.localStorage.setItem(key, value); } catch (_) { /* Private mode may disable storage. */ } }
-  const state = { deck: [], level: 'A1', index: 0, consent: readSetting(CONSENT_KEY) === 'true', continuous: readSetting(MODE_KEY) !== 'false', sessionWanted: false, phase: 'idle', result: null, partial: '', partialMessage: '', completed: new Set(), awarded: new Set(), playing: false, advancing: false };
+  const state = { deck: [], level: 'A1', index: 0, consent: readSetting(CONSENT_KEY) === 'true', continuous: readSetting(MODE_KEY) !== 'false', sessionWanted: false, phase: 'idle', result: null, partial: '', partialMessage: '', completed: new Set(), awarded: new Set(), playing: false, advancing: false, stage: 'word' };
   let recognition = null, recognitionEpoch = 0, sessionEpoch = 0, speechToken = 0, mounted = false, viewActive = true, restartCount = 0;
+  // stage: 'word' first, then 'sentence' — the learner also says a sentence that uses the word.
+  let sentenceBuffer = [], stageTimer = null;
   let restartTimer = null, advanceTimer = null, requestTimer = null, idleTimer = null, speechTimer = null, feedbackTimer = null, finalizeTimer = null;
   // A new microphone or TTS waits for the previous microphone's actual end event.
   let microphoneBarrier = Promise.resolve(true);
@@ -90,6 +92,81 @@
     const saved = examples.get(exampleKey(word));
     return saved && saved.sentence ? saved : null;
   }
+  function targetText() {
+    const example = state.stage === 'sentence' ? exampleFor(current()) : null;
+    return example ? example.sentence : current().key;
+  }
+  // Recognisers rarely return a sentence word for word, so it counts when most of its words come back in order
+  // and the practised word is among them.
+  function sentenceMatch(expected, heard, key) {
+    const want = normalize(expected).split(' ').filter(Boolean), got = normalize(heard).split(' ').filter(Boolean);
+    const table = Array.from({ length: want.length + 1 }, () => new Array(got.length + 1).fill(0));
+    for (let i = 0; i < want.length; i++) for (let j = 0; j < got.length; j++) table[i + 1][j + 1] = want[i] === got[j] ? table[i][j] + 1 : Math.max(table[i][j + 1], table[i + 1][j]);
+    const found = new Set();
+    for (let i = want.length, j = got.length; i && j;) {
+      if (want[i - 1] === got[j - 1]) { found.add(i - 1); i--; j--; } else if (table[i - 1][j] >= table[i][j - 1]) i--; else j--;
+    }
+    const hasWord = (' ' + got.join(' ') + ' ').includes(' ' + normalize(key) + ' ');
+    return { ratio: want.length ? found.size / want.length : 0, hasWord, missing: want.map((_, index) => index).filter(index => !found.has(index)) };
+  }
+  function sentenceMarkup(word, example, missing) {
+    // The practised word (or phrase) is highlighted by its position, so multi-word entries are marked too.
+    const match = example.sentence.match(wordPattern(word.key)), skip = new Set(missing || []);
+    const from = match ? match.index + match[1].length : -1, to = match ? from + match[2].length : -1;
+    let cursor = 0, offset = 0;
+    return example.sentence.split(/(\s+)/).map(token => {
+      const start = offset;
+      offset += token.length;
+      if (!token.trim()) return escape(token);
+      const parts = normalize(token).split(' ').filter(Boolean), indexes = parts.map((_, n) => cursor + n);
+      cursor += parts.length;
+      const html = match && start < to && start + token.length > from ? '<mark>' + escape(token) + '</mark>' : escape(token);
+      return indexes.some(index => skip.has(index)) ? '<span class="voice-word-mismatch">' + html + '</span>' : html;
+    }).join('');
+  }
+  function finishWord(word, epoch) {
+    state.completed.add(word.key);
+    if (state.completed.size === state.deck.length) { stop(false); render(); return; }
+    if (state.continuous && activeSession(epoch)) autoAdvance(epoch);
+    render();
+  }
+  function enterSentence(word, epoch) {
+    const pending = examples.get(exampleKey(word));
+    if (!exampleFor(word) && !(pending && pending.loading)) { finishWord(word, epoch); return; }
+    state.stage = 'sentence';
+    state.result = null;
+    state.partial = '';
+    sentenceBuffer = [];
+    render();
+    if (exampleFor(word) && activeSession(epoch) && !recognition) scheduleResume(epoch);
+  }
+  function recordSentence(alternatives, epoch) {
+    const word = current(), example = exampleFor(word);
+    if (!example) return;
+    let best = null;
+    for (const text of [...alternatives, ...alternatives.map(text => [...sentenceBuffer, text].join(' '))]) {
+      const match = sentenceMatch(example.sentence, text, word.key);
+      if (!best || match.ratio > best.ratio || match.ratio === best.ratio && match.hasWord && !best.hasWord) best = { ...match, text };
+    }
+    const correct = best.ratio >= 0.75 && best.hasWord;
+    state.partial = '';
+    state.partialMessage = '';
+    restartCount = 0;
+    if (correct) {
+      sentenceBuffer = [];
+      state.result = { kind: 'success', title: 'Предложение получилось!', heard: best.text, text: '', missing: [] };
+      sound('correct');
+      state.completed.add(word.key);
+      if (!state.continuous || state.completed.size === state.deck.length) stop(false); else autoAdvance(epoch);
+    } else {
+      // A pause can split the sentence into two results; the next one is checked together with this one.
+      sentenceBuffer = [...sentenceBuffer, alternatives[0]].slice(-2);
+      state.result = { kind: 'retry', title: 'Попробуй ещё раз', heard: best.text, text: '', missing: best.missing };
+      sound('wrong');
+      if (!state.continuous) stop(false);
+    }
+    render();
+  }
   function exampleEndpoint() {
     const endpoint = window.READFOX_CONFIG && window.READFOX_CONFIG.aiGeneratorEndpoint || '';
     return /\/generate\/?$/i.test(endpoint) ? endpoint.replace(/\/generate\/?$/i, '/example') : '';
@@ -108,20 +185,18 @@
         saveSetting(EXAMPLE_KEY, JSON.stringify(stored));
       })
       .catch(() => examples.set(key, { failed: true }))
-      .finally(() => { if (current() === word && viewActive) render(); });
+      .finally(() => {
+        if (current() !== word || !viewActive || state.stage !== 'sentence') { if (current() === word && viewActive) render(); return; }
+        if (!exampleFor(word)) { finishWord(word, sessionEpoch); return; }
+        render();
+        if (activeSession(sessionEpoch) && !recognition && !state.playing) scheduleResume(sessionEpoch);
+      });
   }
-  function exampleHtml(word) {
-    if (!state.result || state.result.kind !== 'success') return '';
-    const example = exampleFor(word), pending = examples.get(exampleKey(word));
-    if (!example) return pending && pending.loading ? '<section class="voice-sentence voice-sentence--loading" aria-live="polite"><span class="voice-eyebrow">Пример с этим словом</span><p>Подбираем предложение…</p></section>' : '';
-    const match = example.sentence.match(wordPattern(word.key));
-    const sentence = match ? escape(example.sentence.slice(0, match.index + match[1].length)) + '<mark>' + escape(match[2]) + '</mark>' + escape(example.sentence.slice(match.index + match[0].length)) : escape(example.sentence);
-    return '<section class="voice-sentence" aria-live="polite"><span class="voice-eyebrow">Пример с этим словом</span><p class="voice-sentence-text" lang="en">' + sentence + '</p>' + (example.translation ? '<p class="voice-sentence-translation">' + escape(example.translation) + '</p>' : '') + '<button type="button" class="voice-btn voice-btn--listen voice-sentence-listen" data-voice="sentence"' + (!canSpeak ? ' disabled' : '') + '>' + SOUND + 'Послушать предложение</button></section>';
-  }
+
   function root() { return document.getElementById('speakingContent'); }
   function activeSession(epoch) { return epoch === sessionEpoch && state.sessionWanted && state.consent && viewActive && !document.hidden; }
   function clearRecognitionTimers() { clearTimeout(requestTimer); clearTimeout(idleTimer); clearTimeout(feedbackTimer); clearTimeout(finalizeTimer); requestTimer = idleTimer = feedbackTimer = finalizeTimer = null; }
-  function clearFlowTimers() { clearTimeout(restartTimer); clearTimeout(advanceTimer); restartTimer = advanceTimer = null; state.advancing = false; }
+  function clearFlowTimers() { clearTimeout(restartTimer); clearTimeout(advanceTimer); clearTimeout(stageTimer); restartTimer = advanceTimer = stageTimer = null; state.advancing = false; }
   function retireRecognition() {
     recognitionEpoch += 1;
     clearRecognitionTimers();
@@ -188,11 +263,14 @@
     const partial = !result && state.partial;
     const kind = result && (result.kind === 'success' || result.kind === 'retry' || result.kind === 'error') ? result.kind : partial ? 'preview' : '';
     const heard = kind === 'preview' ? partial : result?.heard || '';
-    heading.className = 'voice-target' + (kind ? ' voice-target--' + kind : state.sessionWanted ? ' voice-target--listening' : '');
-    heading.innerHTML = kind === 'retry' || kind === 'preview' && normalize(heard) !== normalize(current().key)
+    const example = state.stage === 'sentence' ? exampleFor(current()) : null;
+    heading.className = 'voice-target' + (state.stage === 'sentence' ? ' voice-target--sentence' : '') + (kind ? ' voice-target--' + kind : state.sessionWanted ? ' voice-target--listening' : '');
+    if (state.stage === 'sentence') heading.innerHTML = example ? sentenceMarkup(current(), example, kind === 'retry' ? result.missing : []) : 'Подбираем предложение…';
+    else heading.innerHTML = kind === 'retry' || kind === 'preview' && normalize(heard) !== normalize(current().key)
       ? comparisonMarkup(current().key, normalize(heard)) : escape(current().key);
     note.className = 'voice-inline-feedback' + (kind ? ' voice-inline-feedback--' + kind : '');
-    note.textContent = kind === 'success' ? '✓ Браузер распознал слово.'
+    note.textContent = kind === 'success' ? (state.stage === 'sentence' ? '✓ Предложение распознано.' : '✓ Браузер распознал слово.')
+      : kind === 'retry' && state.stage === 'sentence' ? 'Браузер услышал: ' + heard + '. Выделены слова, которые не удалось распознать.'
       : kind === 'retry' ? 'Браузер услышал: ' + heard + '. Выделены буквы, не совпавшие с образцом.'
       : kind === 'preview' ? 'Сейчас слышу: ' + heard + '…'
       : kind === 'error' ? result.text || result.title
@@ -205,6 +283,7 @@
   }
   function recordRecognition(alternatives, epoch) {
     if (!alternatives.length || state.advancing) return;
+    if (state.stage === 'sentence') { recordSentence(alternatives, epoch); return; }
     const expected = current().key;
     const matched = alternatives.find(text => normalize(text) === normalize(expected));
     const correct = matched !== undefined;
@@ -213,16 +292,23 @@
     restartCount = 0;
     state.result = { kind: correct ? 'success' : 'retry', title: correct ? 'Слово распознано!' : 'Попробуй ещё раз', heard: matched || alternatives[0], text: '' };
     if (correct) {
-      state.completed.add(expected);
       if (!state.awarded.has(expected)) {
         state.awarded.add(expected);
         if (window.ReadFoxAcademy && typeof window.ReadFoxAcademy.awardVoice === 'function') window.ReadFoxAcademy.awardVoice(true);
       }
       sound('correct');
     } else sound('wrong');
-    if (!state.continuous || correct && state.completed.size === state.deck.length) stop(false);
-    else if (correct) autoAdvance(epoch);
+    if (!correct) { if (!state.continuous) stop(false); render(); return; }
+    const word = current();
+    if (!state.continuous) { stop(false); enterSentence(word, epoch); return; }
+    // Keep the recognised word on screen for a moment, then move on to the sentence.
+    state.advancing = true;
     render();
+    stageTimer = setTimeout(() => {
+      stageTimer = null;
+      state.advancing = false;
+      if (current() === word && activeSession(epoch)) enterSentence(word, epoch);
+    }, 1100);
   }
   function armIdleTimeout(epoch) {
     clearTimeout(idleTimer);
@@ -251,9 +337,11 @@
       }
       state.result = null;
       state.partial = '';
+      state.stage = 'word';
+      sentenceBuffer = [];
       render();
       if (!recognition) scheduleResume(epoch);
-    }, exampleFor(current()) ? 4500 : 1250);
+    }, 1250);
   }
   async function launchRecognition(epoch) {
     if (!activeSession(epoch) || state.playing || recognition) return;
@@ -347,7 +435,7 @@
       if (!activeSession(epoch) || state.playing || state.advancing) return;
       if (state.completed.size === state.deck.length) { stop(false); render(); return; }
       if (state.continuous && restartCount < MAX_RESTARTS) { restartCount += 1; scheduleResume(epoch); }
-      else reportError(state.continuous ? 'Этот браузер завершает распознавание автоматически. Нажми микрофон, чтобы продолжить круг.' : 'Слово не распознано. Нажми на микрофон и попробуй ещё раз.');
+      else reportError(state.continuous ? 'Этот браузер завершает распознавание автоматически. Нажми микрофон, чтобы продолжить круг.' : (state.stage === 'sentence' ? 'Предложение' : 'Слово') + ' не распознано. Нажми на микрофон и попробуй ещё раз.');
     };
     requestTimer = setTimeout(() => {
       if (id === recognitionEpoch) reportError('Микрофон не включился. Проверь разрешение браузера и начни снова.');
@@ -383,7 +471,7 @@
     if (synth) synth.prepare();
     const id = speechToken;
     const epoch = sessionEpoch;
-    const text = phrase || current().key;
+    const text = phrase || targetText();
     state.playing = true;
     state.phase = 'speaking';
     const barrier = retireRecognition();
@@ -444,6 +532,8 @@
     retireRecognition();
     stopSpeech();
     state.index = (state.index + delta + state.deck.length) % state.deck.length;
+    state.stage = 'word';
+    sentenceBuffer = [];
     state.result = null;
     state.partial = '';
     state.partialMessage = '';
@@ -455,6 +545,8 @@
     stop(false);
     state.deck = buildDeck();
     state.index = 0;
+    state.stage = 'word';
+    sentenceBuffer = [];
     state.completed.clear();
     state.result = null;
     state.partial = '';
@@ -477,27 +569,31 @@
     if (!container) return;
     if (!state.deck.length) state.deck = buildDeck();
     const word = current();
+    const sentenceStep = state.stage === 'sentence';
+    const example = sentenceStep ? exampleFor(word) : null;
     const count = state.completed.size;
     const complete = count === state.deck.length;
     const phase = state.phase;
-    const micLabel = state.playing ? 'Слушаем образец' : phase === 'requesting' ? 'Включаем микрофон…' : phase === 'listening' ? (state.advancing ? 'Отлично! Следующее слово…' : 'Слушаю тебя…') : phase === 'waiting' ? 'Продолжаем разговор…' : state.continuous ? 'Начать разговорный круг' : 'Нажми и произнеси';
+    const micLabel = state.playing ? 'Слушаем образец' : phase === 'requesting' ? 'Включаем микрофон…' : phase === 'listening' ? (state.advancing ? (sentenceStep ? 'Отлично! Следующее слово…' : 'Отлично! Теперь предложение…') : 'Слушаю тебя…') : phase === 'waiting' ? 'Продолжаем разговор…' : state.continuous ? 'Начать разговорный круг' : 'Нажми и произнеси';
     container.innerHTML = '<div class="voice-page">' +
-      '<header class="voice-heading"><h1>Говорение</h1><p>Послушай слово, произнеси его вслух — браузер проверит, распознал ли он его.</p></header>' +
+      '<header class="voice-heading"><h1>Говорение</h1><p>Послушай слово и произнеси его вслух, а затем — предложение с ним. Браузер проверит, распознал ли он речь.</p></header>' +
       '<div class="voice-layout"><div class="voice-main"><div class="voice-session"><div><span>Твой разговорный круг · ' + escape(state.level) + '</span><strong>' + count + ' <span>/ ' + state.deck.length + ' слов</span></strong></div><div class="voice-progress" role="progressbar" aria-label="Распознано слов" aria-valuemin="0" aria-valuemax="' + state.deck.length + '" aria-valuenow="' + count + '"><span style="width:' + count / state.deck.length * 100 + '%"></span></div></div>' +
       (complete ? '<div class="voice-complete">' + CHECK + '<div><strong>Ты произнёс все ' + count + ' слов!</strong><p>Хорошая работа. Микрофон выключен. Начни новый круг, когда захочешь.</p></div></div>' : '') +
       (!state.consent ? privacyHtml() : '') +
       '<article class="voice-word-card' + (state.sessionWanted ? ' is-listening' : '') + '"><div class="voice-card-top"><span class="voice-source">' + (word.personal ? 'Из твоего словаря' : 'Частотные слова · ' + escape(state.level)) + '</span><span>' + (state.index + 1) + ' / ' + state.deck.length + (state.completed.has(word.key) ? ' · ✓' : '') + '</span></div>' +
-      '<div class="voice-word"><h2 class="voice-target" lang="en">' + escape(word.key) + '</h2>' + (word.ipa ? '<p class="voice-ipa" lang="en">' + escape(word.ipa) + '</p>' : '') + '<p class="voice-translation">' + escape(word.translation) + '</p><p class="voice-inline-feedback" role="status" aria-live="polite" hidden></p></div>' +
-      '<div class="voice-listen-actions"><button type="button" class="voice-btn voice-btn--listen" data-voice="listen"' + (!canSpeak ? ' disabled' : '') + '>' + SOUND + (state.playing ? 'Слушаем…' : 'Послушать') + '</button><button type="button" class="voice-btn voice-btn--slow" data-voice="slow"' + (!canSpeak ? ' disabled' : '') + '><span aria-hidden="true">0.8×</span> Медленно</button></div>' +
-      exampleHtml(word) +
-      '<div class="voice-recording"><div class="voice-wave' + (phase === 'listening' ? ' is-active' : '') + '" aria-hidden="true">' + '<i></i>'.repeat(13) + '</div><button type="button" class="voice-mic' + (state.sessionWanted || state.playing ? ' is-active' : '') + '" data-voice="mic" aria-label="' + escape(state.sessionWanted || state.playing ? 'Остановить микрофон и озвучивание' : micLabel) + '"' + (!Recognition || !state.consent ? ' disabled' : '') + '>' + (state.sessionWanted || state.playing ? '<span class="voice-stop-square" aria-hidden="true"></span>' : MIC) + '</button><p class="voice-mic-label">' + micLabel + '</p>' +
-      (state.sessionWanted || state.playing ? '<button type="button" class="voice-cancel" data-voice="cancel">Остановить</button>' : '<span class="voice-mic-help">' + (!Recognition ? 'Распознавание недоступно в этом браузере' : !state.consent ? 'Разреши распознавание один раз ниже' : state.continuous ? 'Один старт — весь круг вслух' : 'Произнеси слово или фразу на карточке') + '</span>') + '</div>' +
+      (sentenceStep
+        ? '<div class="voice-word voice-word--sentence"><p class="voice-step"><span class="voice-step-done">' + CHECK + escape(word.key) + '</span> Теперь скажи предложение</p><h2 class="voice-target voice-target--sentence" lang="en">' + (example ? sentenceMarkup(word, example, []) : 'Подбираем предложение…') + '</h2>' + (example && example.translation ? '<p class="voice-translation">' + escape(example.translation) + '</p>' : '') + '<p class="voice-inline-feedback" role="status" aria-live="polite" hidden></p></div>'
+        : '<div class="voice-word"><h2 class="voice-target" lang="en">' + escape(word.key) + '</h2>' + (word.ipa ? '<p class="voice-ipa" lang="en">' + escape(word.ipa) + '</p>' : '') + '<p class="voice-translation">' + escape(word.translation) + '</p><p class="voice-inline-feedback" role="status" aria-live="polite" hidden></p></div>') +
+      '<div class="voice-listen-actions"><button type="button" class="voice-btn voice-btn--listen" data-voice="listen"' + (!canSpeak || sentenceStep && !example ? ' disabled' : '') + '>' + SOUND + (state.playing ? 'Слушаем…' : sentenceStep ? 'Послушать предложение' : 'Послушать') + '</button><button type="button" class="voice-btn voice-btn--slow" data-voice="slow"' + (!canSpeak ? ' disabled' : '') + '><span aria-hidden="true">0.8×</span> Медленно</button></div>' +
+      (sentenceStep && !state.completed.has(word.key) ? '<button type="button" class="voice-skip" data-voice="skip">Пропустить предложение</button>' : '') +
+      '<div class="voice-recording"><div class="voice-wave' + (phase === 'listening' ? ' is-active' : '') + '" aria-hidden="true">' + '<i></i>'.repeat(13) + '</div><button type="button" class="voice-mic' + (state.sessionWanted || state.playing ? ' is-active' : '') + '" data-voice="mic" aria-label="' + escape(state.sessionWanted || state.playing ? 'Остановить микрофон и озвучивание' : micLabel) + '"' + (!Recognition || !state.consent || sentenceStep && !example && !state.sessionWanted ? ' disabled' : '') + '>' + (state.sessionWanted || state.playing ? '<span class="voice-stop-square" aria-hidden="true"></span>' : MIC) + '</button><p class="voice-mic-label">' + micLabel + '</p>' +
+      (state.sessionWanted || state.playing ? '<button type="button" class="voice-cancel" data-voice="cancel">Остановить</button>' : '<span class="voice-mic-help">' + (!Recognition ? 'Распознавание недоступно в этом браузере' : !state.consent ? 'Разреши распознавание один раз ниже' : state.continuous ? 'Один старт — весь круг вслух' : sentenceStep ? 'Нажми и произнеси предложение' : 'Произнеси слово или фразу на карточке') + '</span>') + '</div>' +
       (Recognition ? '<label class="voice-continuous"><input type="checkbox" id="voiceContinuous"' + (state.continuous ? ' checked' : '') + '><span><strong>Говорить без пауз</strong><small>Следующее слово появится автоматически</small></span><span class="voice-switch" aria-hidden="true"></span></label>' : '') + '</article>' +
       resultHtml() + '<div class="voice-pagination"><button type="button" class="voice-btn voice-btn--previous" data-voice="previous" aria-label="Предыдущее слово">←<span> Назад</span></button><button type="button" class="voice-shuffle" data-voice="shuffle" title="Новый круг с другими словами">↻ <span>Новый круг</span></button><button type="button" class="voice-btn voice-btn--next" data-voice="next">' + (state.index === state.deck.length - 1 ? 'К началу' : 'Следующее') + ' <span aria-hidden="true">→</span></button></div></div>' +
       '<aside class="voice-sidebar"><section class="voice-tip-card"><span class="voice-eyebrow">Подсказка</span><h3>Не спеши</h3><p>' + escape(word.tip || 'Послушай образец и повтори слово в комфортном темпе. Слова для каждого круга подбираются из твоего словаря и частотного набора твоего уровня.') + '</p><p class="voice-tip-footnote">Проверяем, распознал ли браузер слово. Это не точная оценка отдельных звуков или акцента.</p></section>' +
       (state.consent ? privacyHtml() : '') + '</aside></div></div>';
     paintWordFeedback();
-    if (synth && word && viewActive && !document.hidden) synth.preload(word.key);
+    if (synth && word && viewActive && !document.hidden) synth.preload(sentenceStep && example ? example.sentence : word.key);
     if (word && viewActive && !document.hidden) loadExample(word);
     if (!mounted) {
       container.addEventListener('click', event => {
@@ -506,7 +602,7 @@
         const action = button.dataset.voice;
         if (action === 'listen') speak(false);
         if (action === 'slow') speak(true);
-        if (action === 'sentence') { const example = exampleFor(current()); if (example) speak(false, example.sentence); }
+        if (action === 'skip') { clearFlowTimers(); retireRecognition(); stopSpeech(); finishWord(current(), sessionEpoch); if (!state.continuous || !state.sessionWanted) navigate(1); }
         if (action === 'mic') { if (state.sessionWanted || state.playing) stop(); else startSession(); }
         if (action === 'cancel') { stop(false); state.result = { kind: 'idle', title: 'Микрофон выключен', text: 'Твой прогресс сохранён. Продолжи, когда захочешь.' }; render(); }
         if (action === 'next') navigate(1);

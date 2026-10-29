@@ -665,6 +665,14 @@ body:has(#lessonDialog[open]),body.academy-generating{overflow:hidden}
 .voice-target--success{color:var(--ok)}
 .voice-target--error{color:var(--bad)}
 .voice-word-mismatch{padding:0 2px;border-radius:5px;background:var(--bad-bg);color:var(--bad);box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.voice-step{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px 10px;margin:0 0 12px;font-size:14px;font-weight:600;color:var(--ink-soft)}
+.voice-step-done{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:99px;background:var(--ok-bg);color:var(--ok)}
+.voice-step-done svg{width:14px;height:14px}
+.voice-word h2.voice-target--sentence{font-size:clamp(24px,3.6vw,32px);font-weight:650;line-height:1.35;letter-spacing:-.01em;animation:dlg-in .25s ease both}
+.voice-target--sentence mark{padding:0 3px;border-radius:6px;background:var(--accent-bg);color:var(--accent-ink);box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.voice-target--success.voice-target--sentence mark{background:var(--ok-bg);color:var(--ok)}
+.voice-target--sentence .voice-word-mismatch mark{background:transparent;color:inherit}
+.voice-skip{display:block;min-height:36px;margin:4px auto 0;padding:6px 12px;border:0;background:transparent;color:var(--ink-soft);font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .voice-inline-feedback{max-width:540px;margin:10px auto 12px;font-size:13px;line-height:1.55;color:var(--ink-soft);overflow-wrap:anywhere}
 .voice-inline-feedback--success{color:var(--ok);font-weight:650}
 .voice-inline-feedback--retry,.voice-inline-feedback--error{color:var(--bad)}
@@ -680,12 +688,6 @@ body:has(#lessonDialog[open]),body.academy-generating{overflow:hidden}
 .voice-btn--next:not(:disabled):hover{background:var(--ink);opacity:.88}
 .voice-btn:disabled,.voice-mic:disabled{opacity:.45;cursor:not-allowed}
 .voice-example{margin-top:20px;font-size:14px;font-style:italic;line-height:1.7;color:var(--ink-soft);overflow-wrap:anywhere}
-.voice-sentence{margin-top:18px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-2);text-align:left;animation:dlg-in .25s ease both}
-.voice-sentence-text{margin:6px 0 0;font-size:18px;font-weight:550;line-height:1.5;color:var(--ink);overflow-wrap:anywhere}
-.voice-sentence-text mark{padding:0 2px;border-radius:4px;background:var(--accent-bg);color:var(--accent-ink)}
-.voice-sentence-translation{margin:4px 0 0;font-size:14px;line-height:1.5;color:var(--ink-soft)}
-.voice-sentence .voice-sentence-listen{margin-top:10px}
-.voice-sentence--loading p{margin:6px 0 0;font-size:14px;color:var(--ink-soft)}
 .voice-recording{margin-top:22px;padding-top:6px;border-top:1px solid var(--line)}
 .voice-wave{display:flex;align-items:center;justify-content:center;gap:4px;height:36px;margin:6px auto 12px}
 .voice-wave i{display:block;width:3px;height:6px;border-radius:8px;background:var(--line-strong)}
@@ -1031,6 +1033,7 @@ body:has(#lessonDialog[open]),body.academy-generating{overflow:hidden}
   .voice-word-card{padding:16px 16px 20px}
   .voice-word{padding-top:18px}
   .voice-word h2{font-size:clamp(32px,10vw,42px)}
+  .voice-word h2.voice-target--sentence{font-size:clamp(21px,6vw,26px)}
   .voice-translation{margin:8px 0 14px;font-size:16px}
   .voice-mic{width:64px;height:64px}
   .voice-pagination{gap:6px}
