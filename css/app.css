@@ -670,6 +670,11 @@ body:has(#lessonDialog[open]),body.academy-generating{overflow:hidden}
 .voice-step-done svg{width:14px;height:14px}
 .voice-word h2.voice-target--sentence{font-size:clamp(24px,3.6vw,32px);font-weight:650;line-height:1.35;letter-spacing:-.01em;animation:dlg-in .25s ease both}
 .voice-target--sentence mark{padding:0 3px;border-radius:6px;background:var(--accent-bg);color:var(--accent-ink);box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.voice-shadow-word.is-done{color:var(--ok)}
+.voice-shadow-word.is-current{padding:0 .14em;border-radius:6px;background:var(--accent-bg);color:var(--accent-ink);box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.voice-shadow-word.is-current.is-mismatch{background:var(--bad-bg);color:var(--bad)}
+.voice-shadow-word.is-upcoming{color:var(--ink-muted)}
+.voice-shadow-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 16px}
 .voice-target--success.voice-target--sentence mark{background:var(--ok-bg);color:var(--ok)}
 .voice-target--sentence .voice-word-mismatch mark{background:transparent;color:inherit}
 .voice-skip{display:block;min-height:36px;margin:4px auto 0;padding:6px 12px;border:0;background:transparent;color:var(--ink-soft);font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
@@ -714,6 +719,8 @@ body:has(#lessonDialog[open]),body.academy-generating{overflow:hidden}
 .voice-continuous input:checked~.voice-switch{background:var(--accent)}
 .voice-continuous input:checked~.voice-switch::after{transform:translateX(16px)}
 .voice-continuous input:focus-visible~.voice-switch{outline:2px solid var(--accent);outline-offset:3px}
+.voice-continuous+.voice-continuous{margin-top:10px;padding-top:0;border-top:0}
+.voice-continuous.is-disabled{cursor:not-allowed;opacity:.6}
 .voice-result{margin-top:16px;padding:14px 18px;border-radius:var(--radius);background:var(--surface-2)}
 .voice-result>strong{display:flex;align-items:center;gap:7px;font-size:14px}
 .voice-result>strong svg{width:18px;height:18px;flex:none}

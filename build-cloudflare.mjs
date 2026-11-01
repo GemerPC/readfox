@@ -7,7 +7,7 @@ const output = path.join(root, '.cloudflare-public');
 const files = [
   'index.html', 'favicon.png', 'assets/pronunciations.json', 'css/app.css',
   'js/config.js', 'js/legacy-translations.js', 'js/lesson-contexts.js', 'js/library-data.js', 'js/sounds.js',
-  'js/academy.js', 'js/audio-lifecycle.js', 'js/dialogue-audio.js', 'js/dialogue-voice.js', 'js/dialogue.js', 'js/voice.js', 'js/ui.js', 'js/app.js'
+  'js/academy.js', 'js/audio-lifecycle.js', 'js/dialogue-audio.js', 'js/dialogue-voice.js', 'js/dialogue.js', 'js/shadow-words.js', 'js/voice.js', 'js/ui.js', 'js/app.js'
 ];
 await mkdir(output, { recursive: true });
 if ((await lstat(output)).isSymbolicLink()) throw new Error('Build directory must not be a link');
