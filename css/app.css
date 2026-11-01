@@ -671,7 +671,7 @@ body:has(#lessonDialog[open]),body.academy-generating{overflow:hidden}
 .voice-word h2.voice-target--sentence{font-size:clamp(24px,3.6vw,32px);font-weight:650;line-height:1.35;letter-spacing:-.01em;animation:dlg-in .25s ease both}
 .voice-target--sentence mark{padding:0 3px;border-radius:6px;background:var(--accent-bg);color:var(--accent-ink);box-decoration-break:clone;-webkit-box-decoration-break:clone}
 .voice-shadow-word.is-done{color:var(--ok)}
-.voice-shadow-word.is-current{padding:0 .14em;border-radius:6px;background:var(--accent-bg);color:var(--accent-ink);box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.voice-shadow-word.is-current{padding:0 .14em;border-radius:6px;background:var(--accent-bg);color:var(--accent-ink);font-weight:750;box-decoration-break:clone;-webkit-box-decoration-break:clone}
 .voice-shadow-word.is-current.is-mismatch{background:var(--bad-bg);color:var(--bad)}
 .voice-shadow-word.is-upcoming{color:var(--ink-muted)}
 .voice-shadow-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 16px}
