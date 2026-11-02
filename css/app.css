@@ -526,6 +526,8 @@ body:has(#lessonDialog[open]),body.academy-generating{overflow:hidden}
 .lesson-feedback-title{display:flex;align-items:center;gap:7px}
 .lesson-say-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:8px 0 2px}
 .lesson-feedback .lesson-say{min-height:36px;padding:6px 14px;gap:8px;border-color:currentColor;color:inherit;font-size:15px}
+.lesson-feedback .lesson-say-sentence{align-items:flex-start;max-width:100%;height:auto;white-space:normal;text-align:left;line-height:1.45}
+.lesson-feedback .lesson-say-sentence svg{margin-top:2px}
 .lesson-feedback .lesson-ipa{color:inherit;opacity:.85}
 .lesson-word-card{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:0 0 18px}
 .lesson-word-say{font-size:18px}
