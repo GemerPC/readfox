@@ -233,6 +233,20 @@ function validateGenerated(payload,kind,level){
  if(kind==='lesson'){const g=payload.grammar;if(!g||!text(g.title,180)||!text(g.rule,1600)||!Array.isArray(g.examples)||!g.examples.length||g.examples.length>4||!g.examples.every(p=>Array.isArray(p)&&p.length===2&&p.every(v=>text(v,500)))||!Array.isArray(g.tips)||!g.tips.length||g.tips.length>5||!g.tips.every(v=>text(v,500)))invalid();}
  return {questions:payload.questions,keys:[...keys],grammar:payload.grammar};
 }
+function authoredQuestions(kind,lesson){
+ if(kind==='placement')return PLACEMENT.map(q=>({...q}));
+ if(lesson&&Array.isArray(lesson.questions)&&lesson.questions.length)return lesson.questions.map(q=>({...q,level:q.level||lesson.level}));
+ return null;
+}
+function openAuthoredSet(kind,lesson){
+ const questions=authoredQuestions(kind,lesson);
+ if(!questions||!$('lessonDialog')?.open)return false;
+ cancelGeneration();
+ if(kind==='lesson'&&lesson?.grammar){session=makeSession('lesson',lesson,optionsShuffled(questions),'intro');session.personalCount=0;renderIntro();}
+ else{session=makeSession(kind==='placement'?'placement':'lesson',kind==='placement'?{title:'Твоя точка старта'}:lesson,optionsShuffled(questions));renderQuestion();}
+ notify('ИИ не ответил. Открыты задания, которые уже есть в приложении.');
+ return true;
+}
 function generationError(kind,lesson,error){
  cancelGeneration();session=makeSession(kind,lesson||{title:'Твоя точка старта'},[],'generation-error');
  $('lessonContent').innerHTML='<section class="lesson-empty"><span class="eyebrow">НЕМНОГО ПОДОЖДЁМ</span><h2 id="academyGenerationError" tabindex="-1">Задания пока не готовы</h2><p role="alert">'+esc(error.message||'Не удалось связаться с ИИ. Проверь подключение и попробуй ещё раз.')+'</p><p class="lesson-hint">Прогресс сохранён. Повторная попытка подготовит новый набор.</p><button class="btn" type="button" data-action="retry-generation">Попробовать снова</button><button class="btn btn-secondary" type="button" data-action="close">К обучению</button></section>';
@@ -261,7 +275,7 @@ async function generateAcademy(kind,lesson=null){
    else{session=makeSession(kind,{title:'Твоя точка старта'},optionsShuffled(generated.questions));renderQuestion();}
    return;
   }
- }catch(error){if(generation!==active)return;generationError(kind,lesson,active.timedOut?Error('Подготовка заняла слишком долго. Попробуй ещё раз.'):error.name==='AbortError'?Error('Подготовка прервана. Попробуй ещё раз.'):error);}
+ }catch(error){if(generation!==active)return;if(openAuthoredSet(kind,lesson))return;generationError(kind,lesson,active.timedOut?Error('Подготовка заняла слишком долго. Попробуй ещё раз.'):error.name==='AbortError'?Error('Подготовка прервана. Попробуй ещё раз.'):error);}
 }
 function startLesson(id){
  if(!state.placement.completed){pendingLaunch={kind:'lesson',id};startPlacement();return;}
@@ -324,7 +338,7 @@ function bind(){
 }
 const CONTEXT_TRANSLATIONS=new Map();for(const lesson of LESSONS){for(const [en,ru] of lesson.grammar.examples)CONTEXT_TRANSLATIONS.set(normal(en),ru);for(const q of lesson.questions){if(q.type==='listen')CONTEXT_TRANSLATIONS.set(normal(q.audio),q.answer);}}
 function translateContext(sentence){return window.ReadFoxLibrary?.translate(sentence)||CONTEXT_TRANSLATIONS.get(normal(sentence))||'';}
-window.ReadFoxAcademy=Object.freeze({startLesson,startReview,startPlacement,render,getLevel:()=>LEVELS[Math.max(LEVELS.indexOf(state.placement.level||'A1'),...LESSONS.filter(l=>state.lessons[l.id]?.passed).map(l=>LEVELS.indexOf(l.level)))],translateContext,englishSentence,exportState:()=>JSON.parse(JSON.stringify(state)),importState:data=>{state=cleanState(data);selectedLevel=state.placement.level||'A1';closeDialog();save();},awardVoice,awardDialogue});
+window.ReadFoxAcademy=Object.freeze({startLesson,startReview,startPlacement,render,getLevel:()=>LEVELS[Math.max(LEVELS.indexOf(state.placement.level||'A1'),...LESSONS.filter(l=>state.lessons[l.id]?.passed).map(l=>LEVELS.indexOf(l.level)))],translateContext,englishSentence,authoredQuestions,exportState:()=>JSON.parse(JSON.stringify(state)),importState:data=>{state=cleanState(data);selectedLevel=state.placement.level||'A1';closeDialog();save();},awardVoice,awardDialogue});
 window.addEventListener('readfox:ready',()=>{bind();render();});window.addEventListener('readfox:change',render);window.addEventListener('readfox:view',()=>{if(generation||session?.stage==='generation-error')closeDialog();else if(!document.getElementById('lessonDialog')?.open)stopSpeech();});
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind,{once:true});else bind();
 })();

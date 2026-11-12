@@ -31,6 +31,17 @@ test('speaks a chosen English sentence and ignores Russian or single-word option
   assert.equal(englishSentence(''), '');
 });
 
+test('authored questions cover placement and a lesson when generation fails', () => {
+  const placement = sandbox.window.ReadFoxAcademy.authoredQuestions('placement');
+  assert.equal(placement.length, 12);
+  const bands = {};
+  for (const question of placement) bands[question.level] = (bands[question.level] || 0) + 1;
+  assert.deepEqual(bands, {A1: 3, A2: 3, B1: 3, B2: 3});
+  const lesson = sandbox.window.ReadFoxAcademy.authoredQuestions('lesson', {level: 'B1', questions: [{type: 'choice', prompt: 'Выбери перевод'}]});
+  assert.equal(lesson[0].level, 'B1');
+  assert.equal(sandbox.window.ReadFoxAcademy.authoredQuestions('lesson', {questions: []}), null);
+});
+
 test('the correct-answer path speaks the sentence and still keeps the word chip', () => {
   const source = readFileSync(new URL('../js/academy.js', import.meta.url), 'utf8');
   assert.match(source, /spokenSentence=!placement&&correct&&q\.type==='choice'\?englishSentence\(q\.answer\):''/);
@@ -38,4 +49,5 @@ test('the correct-answer path speaks the sentence and still keeps the word chip'
   assert.match(source, /else if\(!placement&&q\.reviewKey\)speak\(q\.reviewKey,/);
   assert.match(source, /data-action="say-sentence"/);
   assert.match(source, /data-action="say-word"/);
+  assert.match(source, /if\(openAuthoredSet\(kind,lesson\)\)return;/);
 });
