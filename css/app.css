@@ -1253,7 +1253,12 @@ body.dual-active footer{display:none}
 .dual-icon{display:grid;place-items:center;width:34px;height:34px;padding:0;border:0;border-radius:8px;background:transparent;color:inherit;font-size:18px;cursor:pointer}
 .dual-icon:hover{background:var(--surface)}
 .dual-en{margin:6px 0 0;font-size:17px;line-height:1.45;overflow-wrap:anywhere}
-.dual-word{padding:0;border:0;background:none;color:inherit;font:inherit;cursor:pointer}
+.dual-word{padding:0 1px;border:0;border-radius:4px;background:none;color:inherit;font:inherit;cursor:pointer}
+.dual-word.is-soft{background:rgba(232,168,48,.38)}
+.dual-coach{box-sizing:border-box;width:100%;margin:0 0 8px;padding:10px 12px;border:1px solid #e0b15a;border-radius:14px;background:var(--surface);text-align:center}
+.dual-coach-lead{margin:0;font-size:14px;line-height:1.4}
+.dual-coach-word{display:flex;align-items:center;justify-content:center;gap:6px;margin:6px 0 0;font-size:22px;font-weight:750;line-height:1.2}
+.dual-coach .dual-actions{margin-top:8px}
 .dual-word:hover,.dual-word:focus-visible{text-decoration:underline}
 .dual-ru,.dual-heard,.dual-match,.dual-notice,.dual-interim{margin:6px 0 0;font-size:14px;line-height:1.45;color:var(--ink-soft);overflow-wrap:anywhere}
 .dual-mask{color:var(--ink-muted);letter-spacing:.04em}

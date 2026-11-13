@@ -114,6 +114,24 @@ test('an old Fox session still loads, and a broken dual scene is ignored', () =>
   assert.equal(both.dual.notes[1].heard, 'coffee please');
 });
 
+test('word comparison ignores case, contractions and near spellings', () => {
+  const same = scripts.compareWords('I would like a coffee, please.', 'i would like a coffee please');
+  assert.equal(same.mismatches.length, 0);
+  assert.equal(same.close, true);
+  const contraction = scripts.compareWords("I'd like a coffee.", 'I would like a coffee.');
+  assert.equal(contraction.mismatches.length, 0);
+  const fuzzy = scripts.compareWords('I would like a coffee, please.', 'I would like a coffe, please.');
+  assert.equal(fuzzy.mismatches.length, 0);
+  const one = scripts.compareWords('I would like a coffee, please.', 'I would like a tea, please.');
+  assert.equal(one.mismatches.length, 1);
+  assert.equal(String(one.mismatches[0].expected), 'coffee');
+  assert.ok(one.ratio >= 0.5 && one.ratio < 1);
+  const poor = scripts.compareWords('I would like a coffee with milk, please.', 'hello there friend');
+  assert.ok(poor.ratio < 0.5);
+  assert.equal(scripts.similarWord('coffee', 'coffe'), true);
+  assert.equal(scripts.similarWord('coffee', 'tea'), false);
+});
+
 test('both characters stay in the transcript and auto mode has a listen limit', () => {
   const source = readFileSync(new URL('../js/dialogue.js', import.meta.url), 'utf8');
   assert.match(source, /for\(let i=0;i<scene\.lines\.length;i\+\+\)/);
@@ -122,4 +140,9 @@ test('both characters stay in the transcript and auto mode has a listen limit', 
   assert.match(source, /dualAuto\?'Стоп':'Авто'/);
   assert.match(source, /setTimeout\(\(\)=>\{if\(dualListening\)finish\(said,false\);\},9000\)/);
   assert.match(source, /if\(dualCanListen\(\)\)\{dualListen\(true\);return;\}/);
+  assert.match(source, /Почти! Вот это слово немного не похоже/);
+  assert.match(source, /Отлично, теперь похоже!/);
+  assert.doesNotMatch(source, /неправильно/);
+  assert.match(source, /data-dual-action="coach-repeat"/);
+  assert.match(source, /0\.7/);
 });
