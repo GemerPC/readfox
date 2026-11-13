@@ -100,6 +100,94 @@ function reveal(text, count) {
   while (cut < source.length && /[^A-Za-z\s]/.test(source.charAt(cut))) cut++;
   return {text:source.slice(0, cut).trim(), count:seen, total, done:seen >= total};
 }
+const CONTRACTIONS = {
+  "i'm": 'i am', "you're": 'you are', "we're": 'we are', "they're": 'they are',
+  "it's": 'it is', "that's": 'that is', "what's": 'what is', "there's": 'there is', "here's": 'here is',
+  "don't": 'do not', "doesn't": 'does not', "didn't": 'did not',
+  "can't": 'can not', 'cannot': 'can not', "won't": 'will not',
+  "isn't": 'is not', "aren't": 'are not', "wasn't": 'was not', "weren't": 'were not',
+  "haven't": 'have not', "hasn't": 'has not',
+  "i'd": 'i would', "you'd": 'you would', "we'd": 'we would', "they'd": 'they would',
+  "i'll": 'i will', "you'll": 'you will', "we'll": 'we will', "they'll": 'they will',
+  "i've": 'i have', "we've": 'we have', "they've": 'they have', "let's": 'let us'
+};
+function wordTokens(text) {
+  const found = String(text || '').match(/[A-Za-z]+(?:['’][A-Za-z]+)*(?:-[A-Za-z]+)*/g) || [];
+  const words = [];
+  for (let i = 0; i < found.length; i++) words.push(found[i].toLowerCase().replace(/[’‘]/g, "'"));
+  return words;
+}
+function expandWords(words) {
+  const out = [];
+  for (let i = 0; i < words.length; i++) {
+    const parts = CONTRACTIONS[words[i]];
+    if (parts) {
+      const split = parts.split(' ');
+      for (let n = 0; n < split.length; n++) out.push(split[n]);
+    } else out.push(words[i]);
+  }
+  return out;
+}
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev = [];
+  for (let j = 0; j <= n; j++) prev.push(j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      const cost = a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1;
+      cur.push(Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+function similarWord(a, b) {
+  if (a === b) return true;
+  if (!a || !b || a.length < 3 || b.length < 3) return false;
+  const longest = Math.max(a.length, b.length);
+  return 1 - levenshtein(a, b) / longest >= 0.74;
+}
+function compareWords(expected, heard) {
+  const exp = expandWords(wordTokens(expected));
+  const got = expandWords(wordTokens(heard));
+  const rows = exp.length + 1, cols = got.length + 1;
+  const cost = [], choice = [];
+  for (let i = 0; i < rows; i++) {
+    cost.push([]);
+    choice.push([]);
+    for (let j = 0; j < cols; j++) { cost[i][j] = 0; choice[i][j] = 0; }
+  }
+  for (let i = 1; i < rows; i++) cost[i][0] = i;
+  for (let i = 1; i < rows; i++) {
+    for (let j = 1; j < cols; j++) {
+      const paired = cost[i - 1][j - 1] + (similarWord(exp[i - 1], got[j - 1]) ? 0 : 1);
+      const skipHeard = cost[i][j - 1];
+      const skipExpected = cost[i - 1][j] + 1;
+      let best = paired, how = 0;
+      if (skipHeard < best) { best = skipHeard; how = 1; }
+      if (skipExpected < best) { best = skipExpected; how = 2; }
+      cost[i][j] = best;
+      choice[i][j] = how;
+    }
+  }
+  const mismatches = [];
+  let i = exp.length, j = got.length;
+  while (i > 0) {
+    const how = j === 0 ? 2 : choice[i][j];
+    if (how === 1) j--;
+    else if (how === 2) { mismatches.push({ expected: exp[i - 1], heard: '' }); i--; }
+    else {
+      if (!similarWord(exp[i - 1], got[j - 1])) mismatches.push({ expected: exp[i - 1], heard: got[j - 1] || '' });
+      i--; j--;
+    }
+  }
+  mismatches.reverse();
+  const total = exp.length;
+  return { total, ratio: total ? (total - mismatches.length) / total : 1, mismatches, close: total > 0 && mismatches.length === 0 };
+}
 function script(topic) {
   const lines = scenes[topic];
   if (!lines) return null;
@@ -111,6 +199,8 @@ window.ReadFoxDialogueScripts = Object.freeze({
   script,
   matchLine,
   reveal,
-  normalize
+  normalize,
+  compareWords,
+  similarWord
 });
 })();
