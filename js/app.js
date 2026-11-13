@@ -3111,7 +3111,7 @@ async function fetchTranscription(word, timeoutMs = 3500, context = ''){
 
 let tooltipRequestId = 0;
 
-function showTooltip(el, token, forcedSentence){ if(LOCAL_ONLY) return showLocalWordTooltip(el, token, forcedSentence);
+function showTooltip(el, token, forcedSentence, preset){ if(LOCAL_ONLY) return showLocalWordTooltip(el, token, forcedSentence, preset);
   const reqId = ++tooltipRequestId;
   const lexicalInfo = lookupWord(token);
   const key = lexicalInfo ? lexicalInfo.key : token.toLowerCase();
@@ -3135,7 +3135,9 @@ function showTooltip(el, token, forcedSentence){ if(LOCAL_ONLY) return showLocal
   const savedAiTranslation = (preparedContextual && preparedContextual.translation)
     || savedContextualTranslation
     || savedStandaloneTranslation;
-  const initialSentenceTranslation = (preparedContextual && preparedContextual.sentenceTranslation)
+  const presetSentence = preset && typeof preset.sentenceTranslation === "string" ? preset.sentenceTranslation.trim() : "";
+  const initialSentenceTranslation = presetSentence
+    || (preparedContextual && preparedContextual.sentenceTranslation)
     || savedContextSentenceTranslation;
   const initialMatchedFragment = (preparedContextual && preparedContextual.matchedFragment)
     || savedContextMatchedFragment;
@@ -3296,7 +3298,7 @@ function showTooltip(el, token, forcedSentence){ if(LOCAL_ONLY) return showLocal
 
   function loadAiTranslation(){
     view.contextTranslationStatus = "loading";
-    if(sentence) view.sentenceTranslationStatus = "loading";
+    if(sentence && !presetSentence) view.sentenceTranslationStatus = "loading";
     paint();
     fetchContextualWordTranslation(token, sentence || token).then(contextual=>{
       if(reqId !== tooltipRequestId) return;
@@ -3310,7 +3312,7 @@ function showTooltip(el, token, forcedSentence){ if(LOCAL_ONLY) return showLocal
       view.contextualWordTranslation = contextual.translation;
       view.contextualMatchedFragment = contextual.matchedFragment;
       view.contextTranslationStatus = "done";
-      if(sentence){
+      if(sentence && !presetSentence){
         view.sentenceTranslation = contextual.sentenceTranslation;
         view.sentenceTranslationStatus = contextual.sentenceTranslation ? "done" : "skip";
       }
@@ -4264,7 +4266,7 @@ async function init(){
   if(!works) showStorageWarningBanner(); window.dispatchEvent(new Event("readfox:ready"));
 }
 function localContextTranslation(sentence){return window.ReadFoxLibrary?.translate(sentence)||window.ReadFoxAcademy?.translateContext?.(sentence)||"";}
-function showLocalWordTooltip(anchor, token, forcedSentence){
+function showLocalWordTooltip(anchor, token, forcedSentence, preset){
   if(localTooltipCleanup){localTooltipCleanup();localTooltipCleanup=null;}
   const requestId=++tooltipRequestId;
   const lexical=lookupWord(token), isPhrase=wordTokens(token).length>1;
@@ -4278,7 +4280,8 @@ function showLocalWordTooltip(anchor, token, forcedSentence){
     ?previous?.contextTranslations?.[sentence]||previous?.translation:"";
   let translation=ownMeaning||localMeaning||previous?.contextTranslations?.[sentence]
     ||cached?.translation||previous?.translation||lexical?.translation||"";
-  let contextTranslation=previous?.contextSentenceTranslations?.[sentence]
+  const presetSentence=preset&&typeof preset.sentenceTranslation==="string"?preset.sentenceTranslation.trim():"";
+  let contextTranslation=presetSentence||previous?.contextSentenceTranslations?.[sentence]
     ||cached?.sentenceTranslation||localContextTranslation(sentence);
   let source=ownMeaning?"manual":localMeaning?"dictionary":cached?"ai":"dictionary";
   let contextBusy=false,wordBusy=false,failed=false;
@@ -4298,6 +4301,7 @@ function showLocalWordTooltip(anchor, token, forcedSentence){
     '<input id="localTranslation" class="lesson-input" type="text" inputmode="text" autocomplete="off" placeholder="Например: живот" maxlength="1200">'+
     '<div class="tt-actions"><button class="primary" id="localWordSave" type="button">'+(previous?"Сохранить перевод":"В мой словарь +")+'</button>'+
     (previous?'<button class="danger" id="localWordRemove" type="button">Убрать</button>':"")+'</div>'+
+    (presetSentence?'<div class="tt-actions"><button class="primary" id="ttAddLearning" type="button">+ В изучение</button><button id="ttAddKnown" type="button">Уже знаю</button></div>':"")+
     '<div class="tt-context-row"><div class="tt-context">'+escapeHtml(sentence)+'</div><button class="tt-speak tt-speak-sm" id="ttSpeakContext" type="button" aria-label="Прочитать предложение" title="Прочитать предложение">'+SOUND_ICON+'</button></div>'+
     '<div class="tt-context-translation hidden" id="localContextMeaning"><span>Перевод контекста</span><span id="localContextText"></span></div></div>';
   const box=document.getElementById("ttBox");
@@ -4344,7 +4348,12 @@ function showLocalWordTooltip(anchor, token, forcedSentence){
     status.textContent=statusText;
     status.classList.toggle("hidden",!statusText);
     document.getElementById("retryLocalTranslation").classList.toggle("hidden",!failed);
-    save.disabled=!(input.value.trim()||translation);
+    const ready=!!(input.value.trim()||translation);
+    save.disabled=!ready;
+    const addLearning=document.getElementById("ttAddLearning");
+    const addKnown=document.getElementById("ttAddKnown");
+    if(addLearning) addLearning.disabled=!ready;
+    if(addKnown) addKnown.disabled=!ready;
     layout();
   }
   localTooltipCleanup=()=>{
@@ -4376,6 +4385,21 @@ function showLocalWordTooltip(anchor, token, forcedSentence){
     hideTooltip();
   };
   document.getElementById("localWordRemove")?.addEventListener("click",()=>{removeWord(key);hideTooltip();});
+  const saveAs=status=>{
+    if(requestId!==tooltipRequestId)return;
+    const manual=input.value.trim();
+    const value=manual||translation;
+    if(!value)return;
+    addWord(key,value,status,sentence,{
+      sentenceTranslation:contextTranslation,
+      matchedFragment:manual?"":translation,
+      source:manual?"manual":source
+    });
+    showToast(status==="known"?"Добавлено в «Изучено» ✓":"Добавлено в «В изучении» ✓");
+    hideTooltip();
+  };
+  document.getElementById("ttAddLearning")?.addEventListener("click",()=>saveAs("learning"));
+  document.getElementById("ttAddKnown")?.addEventListener("click",()=>saveAs("known"));
   async function loadWord(){
     if(wordBusy||translation||requestId!==tooltipRequestId)return;
     wordBusy=true;paint();
@@ -4395,7 +4419,7 @@ function showLocalWordTooltip(anchor, token, forcedSentence){
     contextBusy=false;
     if(result?.translation){
       if(!translation){translation=result.translation;source="ai";}
-      if(result.sentenceTranslation)contextTranslation=result.sentenceTranslation;
+      if(result.sentenceTranslation&&!presetSentence)contextTranslation=result.sentenceTranslation;
     }else if(!contextTranslation)failed=true;
     paint();
   }
@@ -4427,6 +4451,18 @@ window.ReadFoxBridge=Object.freeze({
   reviewWord(key,correct){recordReview(key,!!correct);},
   openView(name){showView(name);if(name==="dictionary")renderDictionary();if(name==="practice")resetPracticeSession();if(name==="library")renderLibrary();},
   toast:showToast,
+  openWord(el, token, sentence, sentenceTranslation){
+    if(!el || !token) return;
+    showTooltip(el, String(token), sentence || "", {sentenceTranslation: sentenceTranslation || ""});
+  },
+  savePhrase(text, translation){
+    const phrase = String(text || "").trim();
+    const meaning = String(translation || "").trim();
+    if(!phrase || !meaning) return false;
+    addPhrase(phrase, meaning, phrase, {sentenceTranslation: meaning, source: "manual"});
+    showToast("Фраза добавлена в «В изучении» ✓");
+    return true;
+  },
   speak,
   translateContext:localContextTranslation,
   exportData,
