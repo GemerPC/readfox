@@ -113,3 +113,13 @@ test('an old Fox session still loads, and a broken dual scene is ignored', () =>
   assert.equal(both.dual.memory, true);
   assert.equal(both.dual.notes[1].heard, 'coffee please');
 });
+
+test('both characters stay in the transcript and auto mode has a listen limit', () => {
+  const source = readFileSync(new URL('../js/dialogue.js', import.meta.url), 'utf8');
+  assert.match(source, /for\(let i=0;i<scene\.lines\.length;i\+\+\)/);
+  assert.match(source, /hide=current&&learner&&!!d\.memory/);
+  assert.match(source, /data-dual-action="auto"/);
+  assert.match(source, /dualAuto\?'Стоп':'Авто'/);
+  assert.match(source, /setTimeout\(\(\)=>\{if\(dualListening\)finish\(said,false\);\},9000\)/);
+  assert.match(source, /if\(dualCanListen\(\)\)\{dualListen\(true\);return;\}/);
+});

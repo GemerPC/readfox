@@ -72,7 +72,7 @@ function fitViewport(){
  root.style.setProperty('--dlg-vh',vv.height+'px');root.style.setProperty('--dlg-top',vv.offsetTop+'px');
 }
 function showingDual(){return !!state.dual&&!(state.session&&!state.session.completed);}
-function applyLive(){const open=!!document.querySelector('.view[data-view="dialogue"]:not(.hidden)');const on=open&&((!!state.session&&!state.session.completed)||(!!state.dual&&state.dual.phase!=='picker'));document.body.classList.toggle('dialogue-live',on);fitViewport();}
+function applyLive(){const open=!!document.querySelector('.view[data-view="dialogue"]:not(.hidden)');const dual=open&&!!state.dual&&state.dual.phase!=='picker';const on=open&&((!!state.session&&!state.session.completed)||dual);document.body.classList.toggle('dialogue-live',on);document.body.classList.toggle('dual-active',dual);fitViewport();}
 function nearEnd(log){return log.scrollHeight-log.scrollTop-log.clientHeight<64;}
 function jumpButton(show){const b=document.getElementById('dialogueJump');if(b)b.hidden=!show;}
 function scrollToEnd(smooth=true){
@@ -209,7 +209,7 @@ function deckFor(id){
 }
 function add(role,text,extra={}){const s=state.session;s.messages.push({id:s.nextId++,role,text,...extra});if(s.messages.length>80){const removed=s.messages.slice(0,-80).filter(m=>m.role==='user'||m.role==='bot').map(m=>({role:m.role==='bot'?'assistant':'user',content:m.text}));s.memory=compactMemory([...(s.memory||[]),...removed]);s.messages=s.messages.slice(-80);}}
 function start(){stop();state.session={id:sessionId(),completed:false,rewardXp:0,topic:state.selectedTopic,deck:deckFor(state.selectedTopic),messages:[],memory:[],nextId:1,draft:'',hint:'',pending:true,turns:0,checked:0,correct:0,used:[]};shown.clear();hintShown=false;error='';save();requestReply();}
-function stop(){voice?.stop();dualStopAudio();settingsOpen=false;logShown=false;applyLive();requestNumber++;controller?.abort();controller=null;busy=false;save();}
+function stop(){voice?.stop();dualAuto=false;dualStopAudio();settingsOpen=false;logShown=false;applyLive();requestNumber++;controller?.abort();controller=null;busy=false;save();}
 async function requestReply(){
  const s=state.session;if(!s||busy||!s.pending||s.completed)return;
  if(voiceState.active)voice?.waiting();let spokenReply='';
@@ -246,7 +246,7 @@ function chat(){
  return `<div class="dialogue-chat is-live">${headerMarkup(s)}<div class="dialogue-messages" id="dialogueMessages" role="log" aria-live="polite" aria-label="Разговор с Фоксом"><div class="dlg-thread">${slides}<section id="dialogueVoiceInterim" class="dlg-slide is-user dlg-interim" hidden><span class="dlg-slide-who">Ты</span><p class="dlg-slide-text" lang="en"></p></section></div></div><div class="dialogue-composer-wrap"><button type="button" class="dlg-jump" id="dialogueJump" data-dialogue-action="jump" aria-label="К последней реплике" hidden>↓</button><p id="dialogueVoiceNotice" class="dlg-notice" role="status" hidden></p>${hintShown&&s.hint?`<div class="dialogue-ai-hint" lang="en">Например: ${esc(s.hint)}</div>`:''}<form id="dialogueForm" class="dialogue-composer"><button type="button" class="dlg-hint-btn" data-dialogue-action="hint" aria-pressed="${hintShown}" aria-label="${hintShown?'Скрыть пример':'Подсказка'}" title="${hintShown?'Скрыть пример':'Подсказка'}" ${!s.hint||disabled?'disabled':''}>${bulbIcon}</button><label class="sr-only" for="dialogueInput">Твой ответ</label><input id="dialogueInput" value="${esc(s.draft)}" placeholder="${busy?'Фокс пишет…':'Напиши ответ…'}" maxlength="800" autocomplete="off" enterkeyhint="send" ${disabled?'disabled':''}><button id="dialogueSend" type="submit" aria-label="Отправить ответ" ${disabled||!s.draft.trim()?'disabled':''}>↑</button></form></div></div>`;
 }
 
-let dualSynthInstance=null,dualRec=null,dualToken=0,dualListening=false,dualNotice='';
+let dualSynthInstance=null,dualRec=null,dualToken=0,dualListening=false,dualNotice='',dualAuto=false,dualTimer=null;
 function dualScene(){return window.ReadFoxDialogueScripts?.script(state.dual?.topic||state.selectedTopic)||null;}
 function dualSynth(){if(!dualSynthInstance)dualSynthInstance=window.ReadFoxDialogueAudio?.createSynthesizer()||window.speechSynthesis;return dualSynthInstance;}
 function dualRate(){return state.dual?.slow?0.75:0.95;}
@@ -254,11 +254,13 @@ function dualUnlock(){const synth=dualSynth();if(synth&&synth.prepare)synth.prep
 function dualCanListen(){return !!(window.SpeechRecognition||window.webkitSpeechRecognition)&&window.isSecureContext!==false;}
 function dualLine(){const scene=dualScene();if(!state.dual||!scene)return null;return scene.lines[state.dual.index]||null;}
 function dualName(id){const people=window.ReadFoxDialogueScripts?.characters||[];for(let i=0;i<people.length;i++)if(people[i].id===id)return people[i].name;return id||'';}
+function dualClearTimer(){if(dualTimer){clearTimeout(dualTimer);dualTimer=null;}}
 function dualStopAudio(){
- dualToken++;dualListening=false;const rec=dualRec;dualRec=null;
+ dualToken++;dualListening=false;dualClearTimer();const rec=dualRec;dualRec=null;
  if(rec){rec.onresult=rec.onerror=rec.onend=null;try{rec.abort();}catch(_){ }if(rec.micId&&window.ReadFoxAudioLifecycle){window.ReadFoxAudioLifecycle.micEvent(rec.micId,'audio-ended');window.ReadFoxAudioLifecycle.endMic(rec.micId,{reason:'dual-stop'});}}
  try{dualSynth()?.cancel?.();}catch(_){ }
 }
+function dualStopAuto(){dualAuto=false;dualStopAudio();render();}
 function dualSpeak(text,onend){
  const token=++dualToken,value=String(text||'').trim();if(!value){if(onend)onend();return;}
  const rec=dualRec;dualRec=null;dualListening=false;
@@ -275,7 +277,7 @@ function dualSpeak(text,onend){
 }
 function openDual(){
  if(state.session||!dualScene()){bridge().toast?.('Для этой темы пока нет двойного диалога.');return;}
- window.ReadFoxVoice?.stop?.();voice?.stop();dualStopAudio();dualNotice='';
+ window.ReadFoxVoice?.stop?.();voice?.stop();dualAuto=false;dualStopAudio();dualNotice='';
  state.dual={phase:'picker',topic:state.selectedTopic,role:'',index:0,slow:!!state.dual?.slow,memory:!!state.dual?.memory,reveal:0,notes:[]};
  save();render();
 }
@@ -287,13 +289,20 @@ function dualBegin(){
  if(dualLine()&&dualLine().speaker!==state.dual.role)dualPlayPartner();
 }
 function dualPlayPartner(){const line=dualLine();if(!line||!state.dual||line.speaker===state.dual.role)return;dualSpeak(line.en,()=>{if(state.dual&&state.dual.phase==='play'&&dualLine()&&dualLine().speaker!==state.dual.role)dualAdvance();});}
+function dualAutoKick(){
+ if(!dualAuto||!state.dual||state.dual.phase!=='play')return;
+ const line=dualLine();if(!line)return;
+ if(line.speaker!==state.dual.role){dualSpeak(line.en,()=>{if(dualAuto&&state.dual&&state.dual.phase==='play'&&dualLine()&&dualLine().speaker!==state.dual.role)dualAdvance();});return;}
+ if(dualCanListen()){dualListen(true);return;}
+ dualSpeak(line.en,()=>{if(dualAuto&&state.dual&&state.dual.phase==='play'&&dualLine()&&dualLine().speaker===state.dual.role)dualFinishTurn('',false);});
+}
 function dualAdvance(){
  const scene=dualScene();if(!state.dual||!scene)return;
  state.dual.reveal=0;state.dual.index+=1;
- if(state.dual.index>=scene.lines.length){state.dual.phase='done';state.dual.index=scene.lines.length;save();render();return;}
+ if(state.dual.index>=scene.lines.length){dualAuto=false;dualClearTimer();state.dual.phase='done';state.dual.index=scene.lines.length;save();render();return;}
  save();render();
- const line=scene.lines[state.dual.index];
- if(line&&line.speaker!==state.dual.role)dualPlayPartner();
+ if(dualAuto)dualAutoKick();
+ else{const line=scene.lines[state.dual.index];if(line&&line.speaker!==state.dual.role)dualPlayPartner();}
 }
 function dualFinishTurn(heard,fromSpeech){
  const line=dualLine();if(!state.dual||state.dual.phase!=='play'||!line||line.speaker!==state.dual.role)return;
@@ -307,13 +316,14 @@ function dualFinishTurn(heard,fromSpeech){
 function dualHint(){
  const line=dualLine();if(!state.dual||!line||line.speaker!==state.dual.role)return;
  dualUnlock();
+ const resume=()=>{if(dualAuto&&state.dual&&state.dual.phase==='play'&&dualLine()&&dualLine().speaker===state.dual.role&&!dualListening)dualAutoKick();};
  if(state.dual.memory){
   const part=window.ReadFoxDialogueScripts.reveal(line.en,(state.dual.reveal||0)+1);
   state.dual.reveal=part.count;save();render();
-  if(part.text)dualSpeak(part.text);
- }else dualSpeak(line.en);
+  if(part.text)dualSpeak(part.text,resume);else resume();
+ }else dualSpeak(line.en,resume);
 }
-function dualListen(){
+function dualListen(auto){
  if(!state.dual||dualListening||!dualCanListen())return;
  const line=dualLine();if(!line||line.speaker!==state.dual.role)return;
  const Rec=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -322,13 +332,14 @@ function dualListen(){
  const life=window.ReadFoxAudioLifecycle;rec.micId=life?.beginMic('dual');
  let said='';
  const finish=(text,hold)=>{
-  if(!dualListening)return;dualListening=false;
+  if(!dualListening)return;dualListening=false;dualClearTimer();
   rec.onresult=rec.onerror=rec.onend=null;dualRec=null;
   try{rec.abort();}catch(_){ }
   if(rec.micId&&life){life.micEvent(rec.micId,'audio-ended');life.endMic(rec.micId,{reason:'dual-listen'});}
-  if(hold){dualNotice=text;render();return;}
+  if(hold){if(auto&&dualAuto){const spoken=dualLine();if(spoken)dualSpeak(spoken.en,()=>{if(dualAuto&&dualLine()&&dualLine().speaker===spoken.speaker&&dualLine().en===spoken.en)dualFinishTurn('',false);});return;}dualNotice=text;render();return;}
   dualFinishTurn(text,true);
  };
+ if(auto)dualTimer=setTimeout(()=>{if(dualListening)finish(said,false);},9000);
  rec.onstart=()=>{life?.micEvent(rec.micId,'started');};
  rec.onresult=event=>{
   said='';let final=false;
@@ -346,7 +357,7 @@ function dualListen(){
 }
 function dualRestart(swap){
  const scene=dualScene();if(!state.dual||!scene)return;
- window.ReadFoxVoice?.stop?.();voice?.stop();
+ window.ReadFoxVoice?.stop?.();voice?.stop();dualAuto=false;dualStopAudio();
  if(swap){const ids=scene.characters.map(c=>c.id);state.dual.role=ids[0]===state.dual.role?ids[1]:ids[0];}
  state.dual.phase='play';state.dual.index=0;state.dual.reveal=0;state.dual.notes=[];dualNotice='';
  save();dualUnlock();render();
@@ -360,13 +371,14 @@ function dualWords(text){
 function dualClick(b){
  if(b.dataset.dualWord){const card=b.closest('[data-dual-line]');const scene=dualScene();const line=scene&&scene.lines[Number(card&&card.dataset.dualLine)];if(line)bridge().openWord?.(b,b.dataset.dualWord,line.en,line.ru);return;}
  if(b.dataset.dualSave!=null&&b.dataset.dualSave!==''){const scene=dualScene();const line=scene&&scene.lines[Number(b.dataset.dualSave)];if(line)bridge().savePhrase?.(line.en,line.ru);return;}
- if(b.dataset.dualSay!=null&&b.dataset.dualSay!==''){const scene=dualScene();const line=scene&&scene.lines[Number(b.dataset.dualSay)];if(line){dualUnlock();dualSpeak(line.en);}return;}
+ if(b.dataset.dualSay!=null&&b.dataset.dualSay!==''){const scene=dualScene();const line=scene&&scene.lines[Number(b.dataset.dualSay)];if(line){dualUnlock();dualSpeak(line.en,()=>{if(dualAuto)dualAutoKick();});}return;}
  switch(b.dataset.dualAction){
-  case 'back':dualStopAudio();state.dual=null;dualNotice='';save();render();break;
+  case 'back':dualAuto=false;dualStopAudio();state.dual=null;dualNotice='';save();render();break;
   case 'role':if(state.dual&&b.dataset.dualRole){state.dual.role=b.dataset.dualRole;save();render();}break;
   case 'begin':dualBegin();break;
   case 'slow':if(state.dual){state.dual.slow=!state.dual.slow;save();render();}break;
   case 'memory':if(state.dual){state.dual.memory=!state.dual.memory;if(!state.dual.memory)state.dual.reveal=0;save();render();}break;
+  case 'auto':if(dualAuto)dualStopAuto();else{dualUnlock();dualAuto=true;window.ReadFoxVoice?.stop?.();voice?.stop();render();dualAutoKick();}break;
   case 'speak':dualListen();break;
   case 'skip':dualStopAudio();dualFinishTurn('',false);break;
   case 'hint':dualHint();break;
@@ -386,8 +398,8 @@ function dualMarkup(){
   return '<section class="dual-screen dual-done"><div class="dialogue-completion-trophy" aria-hidden="true">🎭</div><span class="dialogue-kicker">ДВОЙНОЙ ДИАЛОГ</span><h1>Сцена сыграна</h1><p>Ты говорил за '+esc(mine)+'. '+esc(other)+' можно взять в следующий раз. Опыт за эту сцену не начисляется.</p><div class="dialogue-completion-actions"><button type="button" class="dialogue-primary" data-dual-action="swap">Поменяться ролями</button><button type="button" class="dialogue-primary dual-again" data-dual-action="again">Заново</button>'+back+'</div></section>';
  }
  const mine=d.role,bubbles=[];
- for(let i=0;i<=d.index&&i<scene.lines.length;i++){
-  const line=scene.lines[i],learner=line.speaker===mine,current=i===d.index,hide=current&&learner&&d.memory,note=d.notes&&d.notes[i];
+ for(let i=0;i<scene.lines.length;i++){
+  const line=scene.lines[i],learner=line.speaker===mine,current=i===d.index,hide=current&&learner&&!!d.memory,note=d.notes&&d.notes[i];
   const english=hide?(()=>{const part=window.ReadFoxDialogueScripts.reveal(line.en,d.reveal||0);return part.text?dualWords(part.text)+'<span class="dual-mask"> …</span>':'<span class="dual-mask">Фраза скрыта</span>';})():dualWords(line.en);
   bubbles.push('<article class="dual-bubble '+(learner?'is-learner':'is-partner')+(current?' is-current':'')+'" data-dual-line="'+i+'"><header><span>'+esc(dualName(line.speaker))+(learner?' · ты':'')+'</span><span class="dual-tools"><button type="button" class="dual-icon" data-dual-say="'+i+'" aria-label="Прослушать реплику '+esc(dualName(line.speaker))+'">'+dualSound+'</button><button type="button" class="dual-icon" data-dual-save="'+i+'" aria-label="Сохранить фразу">+</button></span></header><p class="dual-en" lang="en">'+english+'</p><p class="dual-ru">'+esc(line.ru)+'</p>'+(note&&note.heard?'<p class="dual-heard">Услышали: '+esc(note.heard)+'</p><p class="dual-match">'+(note.close?'Близко к реплике.':'Идём дальше.')+'</p>':note?'<p class="dual-match">Не расслышали. Идём дальше.</p>':'')+'</article>');
  }
@@ -395,11 +407,28 @@ function dualMarkup(){
  let bar='';
  if(learner){
   const listen=dualCanListen();
-  bar='<div class="dual-bar"><p id="dualInterim" class="dual-interim">'+(dualListening?'Слушаю…':'')+'</p>'+(dualNotice?'<p class="dual-notice">'+esc(dualNotice)+'</p>':'')+'<div class="dual-actions"><button type="button" class="dialogue-primary" data-dual-action="speak"'+(listen&&!dualListening?'':' disabled')+'>'+(dualListening?'Слушаю…':'Говорить')+'</button><button type="button" class="dual-secondary" data-dual-action="skip">Пропустить</button><button type="button" class="dual-secondary" data-dual-action="hint"'+(dualListening?' disabled':'')+'>Подсказка</button></div>'+(listen?'':'<p class="dual-notice">Распознавание недоступно. Нажми «Пропустить», чтобы продолжить.</p>')+'</div>';
- }else bar='<div class="dual-bar"><button type="button" class="dialogue-primary" data-dual-action="partner">Слушать</button><p class="dual-notice">'+esc(dualName(line&&line.speaker))+' говорит. Микрофон выключен.</p></div>';
- return '<section class="dual-play"><header class="dual-top"><button type="button" class="dialogue-link" data-dual-action="back">К темам</button><strong>'+esc(topics[d.topic].title)+'</strong><span class="dual-toggles"><button type="button" class="dual-toggle" data-dual-action="memory" aria-pressed="'+d.memory+'">По памяти</button><button type="button" class="dual-toggle" data-dual-action="slow" aria-pressed="'+d.slow+'">Медленнее</button></span></header><div class="dual-log" id="dualLog">'+bubbles.join('')+'</div>'+bar+'</section>';
+  bar='<div class="dual-bar"><div class="dual-bar-inner"><p id="dualInterim" class="dual-interim">'+(dualListening?'Слушаю…':'')+'</p>'+(dualNotice?'<p class="dual-notice">'+esc(dualNotice)+'</p>':'')+'<div class="dual-actions"><button type="button" class="dialogue-primary" data-dual-action="speak"'+(listen&&!dualListening?'':' disabled')+'>'+(dualListening?'Слушаю…':'Говорить')+'</button><button type="button" class="dual-secondary" data-dual-action="skip">Пропустить</button><button type="button" class="dual-secondary" data-dual-action="hint"'+(dualListening?' disabled':'')+'>Подсказка</button></div>'+(listen?'':'<p class="dual-notice">Распознавание недоступно. Нажми «Пропустить», чтобы продолжить.</p>')+'</div></div>';
+ }else bar='<div class="dual-bar"><div class="dual-bar-inner"><div class="dual-actions"><button type="button" class="dialogue-primary" data-dual-action="partner">Слушать</button></div><p class="dual-notice">'+esc(dualName(line&&line.speaker))+' говорит. Микрофон выключен.</p></div></div>';
+ return '<section class="dual-play"><header class="dual-top"><button type="button" class="dialogue-link" data-dual-action="back">К темам</button><strong>'+esc(topics[d.topic].title)+'</strong><span class="dual-toggles"><button type="button" class="dual-toggle" data-dual-action="auto" aria-pressed="'+dualAuto+'">'+(dualAuto?'Стоп':'Авто')+'</button><button type="button" class="dual-toggle" data-dual-action="memory" aria-pressed="'+d.memory+'">По памяти</button><button type="button" class="dual-toggle" data-dual-action="slow" aria-pressed="'+d.slow+'">Медленнее</button></span></header><div class="dual-log" id="dualLog">'+bubbles.join('')+'</div>'+bar+'</section>';
 }
 const dualSound='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M16 9.5a4 4 0 0 1 0 5"/></svg>';
+function dualPlace(){
+ const log=document.getElementById('dualLog'),bar=document.querySelector('.dual-bar'),current=log&&log.querySelector('.is-current');
+ if(bar)document.documentElement.style.setProperty('--dual-bar',(bar.offsetHeight+12)+'px');
+ if(!log||!current||!bar)return;
+ const gap=24;
+ for(let guard=0;guard<5;guard++){
+  const rect=current.getBoundingClientRect(),limit=bar.getBoundingClientRect().top-gap;
+  if(rect.bottom<=limit)break;
+  log.scrollTop+=rect.bottom-limit;
+ }
+ const logTop=log.getBoundingClientRect().top,top=current.getBoundingClientRect().top;
+ if(top<logTop+8){
+  log.scrollTop-=logTop+8-top;
+  const again=current.getBoundingClientRect();
+  if(again.bottom>bar.getBoundingClientRect().top-8)log.scrollTop+=again.bottom-(bar.getBoundingClientRect().top-8);
+ }
+}
 function render(scroll=false){
  const el=document.getElementById('dialogueContent');if(!el)return;
  // A thread that was hidden (first load, another tab) opens on the last reply instead of scrolling through history.
@@ -409,9 +438,8 @@ function render(scroll=false){
  // History restored from storage appears at once; only messages that arrive while the chat is open animate in.
  if(live&&seenSession!==s.id){seen.clear();s.messages.forEach(m=>seen.add(m.id));seenSession=s.id;busyShown=busy;followLog=true;}
  el.innerHTML=showingDual()?dualMarkup():s?(s.completed?completedMarkup(s):chat()):setup();
- const dualLog=document.getElementById('dualLog');if(dualLog)dualLog.scrollTop=dualLog.scrollHeight;
  if(live){s.messages.forEach(m=>seen.add(m.id));busyShown=busy;}
- paintVoice();applyLive();
+ paintVoice();applyLive();dualPlace();
  el.querySelectorAll('[data-dialogue-insert]').forEach(b=>{b.disabled=!!s&&(busy||s.pending);b.title=s?'Вставить в ответ':'Произнести слово';});
  const log=document.getElementById('dialogueMessages');
  if(log){
