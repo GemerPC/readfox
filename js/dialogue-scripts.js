@@ -173,6 +173,8 @@ function compareWords(expected, heard) {
       choice[i][j] = how;
     }
   }
+  const matched = [];
+  for (let n = 0; n < exp.length; n++) matched.push(false);
   const mismatches = [];
   let i = exp.length, j = got.length;
   while (i > 0) {
@@ -180,13 +182,46 @@ function compareWords(expected, heard) {
     if (how === 1) j--;
     else if (how === 2) { mismatches.push({ expected: exp[i - 1], heard: '' }); i--; }
     else {
-      if (!similarWord(exp[i - 1], got[j - 1])) mismatches.push({ expected: exp[i - 1], heard: got[j - 1] || '' });
+      if (similarWord(exp[i - 1], got[j - 1])) matched[i - 1] = true;
+      else mismatches.push({ expected: exp[i - 1], heard: got[j - 1] || '' });
       i--; j--;
     }
   }
   mismatches.reverse();
   const total = exp.length;
-  return { total, ratio: total ? (total - mismatches.length) / total : 1, mismatches, close: total > 0 && mismatches.length === 0 };
+  return { total, ratio: total ? (total - mismatches.length) / total : 1, mismatches, matched, close: total > 0 && mismatches.length === 0 };
+}
+function wordMarks(expected, heard) {
+  const cmp = compareWords(expected, heard);
+  const surfaces = String(expected || '').match(/[A-Za-z]+(?:['’][A-Za-z]+)*(?:-[A-Za-z]+)*/g) || [];
+  const norms = wordTokens(expected);
+  const marks = [];
+  let cursor = 0;
+  for (let i = 0; i < norms.length; i++) {
+    const parts = expandWords([norms[i]]);
+    let ok = parts.length > 0;
+    for (let n = 0; n < parts.length; n++) {
+      if (!cmp.matched[cursor]) ok = false;
+      cursor++;
+    }
+    marks.push({ token: surfaces[i] || norms[i], ok: ok });
+  }
+  return marks;
+}
+function lineKind(expected, heard) {
+  const text = String(heard || '').trim();
+  if (!text) return 'miss';
+  const cmp = compareWords(expected, text);
+  if (!cmp.total) return 'miss';
+  if (cmp.mismatches.length === 0) return 'ok';
+  if (cmp.ratio >= 0.5 && cmp.mismatches.length <= 3) return 'almost';
+  return 'miss';
+}
+function nextStreak(streak, kind) {
+  const current = streak > 0 ? Math.floor(streak) : 0;
+  if (kind === 'ok') return current + 1;
+  if (kind === 'almost' || kind === 'miss') return 0;
+  return current;
 }
 function script(topic) {
   const lines = scenes[topic];
@@ -201,6 +236,9 @@ window.ReadFoxDialogueScripts = Object.freeze({
   reveal,
   normalize,
   compareWords,
-  similarWord
+  similarWord,
+  wordMarks,
+  lineKind,
+  nextStreak
 });
 })();

@@ -130,12 +130,25 @@ test('word comparison ignores case, contractions and near spellings', () => {
   assert.ok(poor.ratio < 0.5);
   assert.equal(scripts.similarWord('coffee', 'coffe'), true);
   assert.equal(scripts.similarWord('coffee', 'tea'), false);
+  const marks = scripts.wordMarks('I would like a coffee, please.', 'I would like a tea, please.');
+  const byToken = {};
+  for (const mark of marks) byToken[String(mark.token)] = !!mark.ok;
+  assert.equal(byToken.coffee, false);
+  assert.equal(byToken.like, true);
+  assert.equal(scripts.wordMarks("I'd like coffee.", 'I would like coffee.').every(mark => mark.ok), true);
+  assert.equal(scripts.lineKind('I would like a coffee, please.', 'I would like a coffee, please.'), 'ok');
+  assert.equal(scripts.lineKind('I would like a coffee, please.', 'I would like a tea, please.'), 'almost');
+  assert.equal(scripts.lineKind('I would like a coffee with milk, please.', 'hello there'), 'miss');
+  assert.equal(scripts.nextStreak(2, 'ok'), 3);
+  assert.equal(scripts.nextStreak(2, 'almost'), 0);
+  assert.equal(scripts.nextStreak(2, 'miss'), 0);
+  assert.equal(scripts.nextStreak(2, 'skip'), 2);
 });
 
 test('both characters stay in the transcript and auto mode has a listen limit', () => {
   const source = readFileSync(new URL('../js/dialogue.js', import.meta.url), 'utf8');
   assert.match(source, /for\(let i=0;i<scene\.lines\.length;i\+\+\)/);
-  assert.match(source, /hide=current&&learner&&!!d\.memory/);
+  assert.match(source, /hide=!reading&&current&&learner&&!!d\.memory&&!coaching/);
   assert.match(source, /data-dual-action="auto"/);
   assert.match(source, /dualAuto\?'Стоп':'Авто'/);
   assert.match(source, /setTimeout\(\(\)=>\{if\(dualListening\)finish\(said,false\);\},9000\)/);
@@ -145,4 +158,8 @@ test('both characters stay in the transcript and auto mode has a listen limit', 
   assert.doesNotMatch(source, /неправильно/);
   assert.match(source, /data-dual-action="coach-repeat"/);
   assert.match(source, /0\.7/);
+  assert.match(source, /Повторить только это слово/);
+  assert.match(source, /Прослушать весь диалог/);
+  assert.match(source, /prefers-reduced-motion/);
+  assert.match(source, /function dualDing/);
 });
