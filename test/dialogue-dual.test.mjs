@@ -160,6 +160,41 @@ test('both characters stay in the transcript and auto mode has a listen limit', 
   assert.match(source, /0\.7/);
   assert.match(source, /Повторить только это слово/);
   assert.match(source, /Прослушать весь диалог/);
+  assert.match(source, /id="dualScript"/);
+  assert.match(source, /function dualPreviewSay/);
+  assert.match(source, /class="dialogue-primary dual-listen" data-dual-action="preview"/);
   assert.match(source, /prefers-reduced-motion/);
   assert.match(source, /function dualDing/);
+});
+
+test('the role screen shows the whole script before a role is chosen', () => {
+  const content = { innerHTML: '', querySelectorAll: () => [] };
+  document.getElementById = id => id === 'dialogueContent' ? content : null;
+  dialogue.importState({
+    version: 2,
+    selectedTopic: 'meet',
+    dual: { phase: 'picker', topic: 'meet', role: '', index: 0, slow: false, memory: false, reveal: 0, notes: [] }
+  });
+  const html = content.innerHTML;
+  const scene = scripts.script('meet');
+  assert.match(html, /Знакомство/);
+  assert.match(html, /data-dual-action="preview">Прослушать весь диалог/);
+  assert.doesNotMatch(html, /data-dual-action="preview"[^>]*disabled/);
+  assert.match(html, /data-dual-action="begin"[^>]*disabled/);
+  assert.match(html, /К темам/);
+  assert.equal(html.split('dual-line-hit').length - 1, scene.lines.length);
+  scene.lines.forEach(line => {
+    assert.ok(html.includes(line.en.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]))), line.en);
+    assert.ok(html.includes(line.ru), line.ru);
+  });
+  assert.equal(html.includes('· ты'), false);
+  dialogue.importState({
+    version: 2,
+    selectedTopic: 'meet',
+    dual: { phase: 'picker', topic: 'meet', role: 'hailey', index: 0, slow: false, memory: false, reveal: 0, notes: [] }
+  });
+  assert.match(content.innerHTML, /Hailey · ты/);
+  assert.match(content.innerHTML, /is-mine/);
+  assert.doesNotMatch(content.innerHTML, /Tommy · ты/);
+  document.getElementById = () => null;
 });

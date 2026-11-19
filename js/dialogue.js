@@ -177,7 +177,7 @@ function cleanDual(raw){
  const scene=api.script(raw.topic);
  if(!scene)return null;
  const ids=scene.characters.map(c=>c.id);
- const phase=raw.phase==='picker'||raw.phase==='done'||raw.phase==='play'||raw.phase==='listen'?raw.phase:'play';
+ const phase=raw.phase==='listen'?'picker':raw.phase==='picker'||raw.phase==='done'||raw.phase==='play'?raw.phase:'play';
  const role=ids.indexOf(raw.role)>=0?raw.role:'';
  if(phase!=='picker'&&!role)return null;
  const max=scene.lines.length,notes=[],source=Array.isArray(raw.notes)?raw.notes:[];
@@ -213,7 +213,7 @@ function deckFor(id){
 }
 function add(role,text,extra={}){const s=state.session;s.messages.push({id:s.nextId++,role,text,...extra});if(s.messages.length>80){const removed=s.messages.slice(0,-80).filter(m=>m.role==='user'||m.role==='bot').map(m=>({role:m.role==='bot'?'assistant':'user',content:m.text}));s.memory=compactMemory([...(s.memory||[]),...removed]);s.messages=s.messages.slice(-80);}}
 function start(){stop();state.session={id:sessionId(),completed:false,rewardXp:0,topic:state.selectedTopic,deck:deckFor(state.selectedTopic),messages:[],memory:[],nextId:1,draft:'',hint:'',pending:true,turns:0,checked:0,correct:0,used:[]};shown.clear();hintShown=false;error='';save();requestReply();}
-function stop(){voice?.stop();dualAuto=false;dualCoach=null;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();settingsOpen=false;logShown=false;applyLive();requestNumber++;controller?.abort();controller=null;busy=false;save();}
+function stop(){voice?.stop();dualAuto=false;dualCoach=null;dualPreview='';dualSpoken=-1;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();settingsOpen=false;logShown=false;applyLive();requestNumber++;controller?.abort();controller=null;busy=false;save();}
 async function requestReply(){
  const s=state.session;if(!s||busy||!s.pending||s.completed)return;
  if(voiceState.active)voice?.waiting();let spokenReply='';
@@ -250,7 +250,7 @@ function chat(){
  return `<div class="dialogue-chat is-live">${headerMarkup(s)}<div class="dialogue-messages" id="dialogueMessages" role="log" aria-live="polite" aria-label="Разговор с Фоксом"><div class="dlg-thread">${slides}<section id="dialogueVoiceInterim" class="dlg-slide is-user dlg-interim" hidden><span class="dlg-slide-who">Ты</span><p class="dlg-slide-text" lang="en"></p></section></div></div><div class="dialogue-composer-wrap"><button type="button" class="dlg-jump" id="dialogueJump" data-dialogue-action="jump" aria-label="К последней реплике" hidden>↓</button><p id="dialogueVoiceNotice" class="dlg-notice" role="status" hidden></p>${hintShown&&s.hint?`<div class="dialogue-ai-hint" lang="en">Например: ${esc(s.hint)}</div>`:''}<form id="dialogueForm" class="dialogue-composer"><button type="button" class="dlg-hint-btn" data-dialogue-action="hint" aria-pressed="${hintShown}" aria-label="${hintShown?'Скрыть пример':'Подсказка'}" title="${hintShown?'Скрыть пример':'Подсказка'}" ${!s.hint||disabled?'disabled':''}>${bulbIcon}</button><label class="sr-only" for="dialogueInput">Твой ответ</label><input id="dialogueInput" value="${esc(s.draft)}" placeholder="${busy?'Фокс пишет…':'Напиши ответ…'}" maxlength="800" autocomplete="off" enterkeyhint="send" ${disabled?'disabled':''}><button id="dialogueSend" type="submit" aria-label="Отправить ответ" ${disabled||!s.draft.trim()?'disabled':''}>↑</button></form></div></div>`;
 }
 
-let dualSynthInstance=null,dualRec=null,dualToken=0,dualListening=false,dualNotice='',dualAuto=false,dualTimer=null,dualCoach=null,dualSpeaking=false,dualStreak=0,dualGlowIndex=-1,dualReadPaused=true,dualReadPlaying=false,dualAudioCtx=null;
+let dualSynthInstance=null,dualRec=null,dualToken=0,dualListening=false,dualNotice='',dualAuto=false,dualTimer=null,dualCoach=null,dualSpeaking=false,dualStreak=0,dualGlowIndex=-1,dualReadPaused=true,dualReadPlaying=false,dualAudioCtx=null,dualPreview='',dualSpoken=-1;
 const COACH_INTRO='Почти! Вот это слово немного не похоже';
 const COACH_PRAISE='Отлично, теперь похоже!';
 function dualScene(){return window.ReadFoxDialogueScripts?.script(state.dual?.topic||state.selectedTopic)||null;}
@@ -284,13 +284,13 @@ function dualSpeak(text,onend,rate,lang,pitch){
 }
 function openDual(){
  if(state.session||!dualScene()){bridge().toast?.('Для этой темы пока нет двойного диалога.');return;}
- window.ReadFoxVoice?.stop?.();voice?.stop();dualAuto=false;dualCoach=null;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();dualStreak=0;dualGlowIndex=-1;dualNotice='';
+ window.ReadFoxVoice?.stop?.();voice?.stop();dualAuto=false;dualCoach=null;dualPreview='';dualSpoken=-1;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();dualStreak=0;dualGlowIndex=-1;dualNotice='';
  state.dual={phase:'picker',topic:state.selectedTopic,role:'',index:0,slow:!!state.dual?.slow,memory:!!state.dual?.memory,reveal:0,notes:[]};
  save();render();
 }
 function dualBegin(){
  const scene=dualScene();if(!state.dual||!scene||!state.dual.role)return;
- window.ReadFoxVoice?.stop?.();voice?.stop();dualCoach=null;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();dualStreak=0;dualGlowIndex=-1;
+ window.ReadFoxVoice?.stop?.();voice?.stop();dualCoach=null;dualPreview='';dualSpoken=-1;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();dualStreak=0;dualGlowIndex=-1;
  state.dual.phase='play';state.dual.index=0;state.dual.reveal=0;state.dual.notes=[];dualNotice='';
  save();dualUnlock();render();
  if(dualLine()&&dualLine().speaker!==state.dual.role)dualPlayPartner();
@@ -389,7 +389,7 @@ function dualListen(auto){
 }
 function dualRestart(swap){
  const scene=dualScene();if(!state.dual||!scene)return;
- window.ReadFoxVoice?.stop?.();voice?.stop();dualAuto=false;dualCoach=null;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();dualStreak=0;dualGlowIndex=-1;
+ window.ReadFoxVoice?.stop?.();voice?.stop();dualAuto=false;dualCoach=null;dualPreview='';dualSpoken=-1;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();dualStreak=0;dualGlowIndex=-1;
  if(swap){const ids=scene.characters.map(c=>c.id);state.dual.role=ids[0]===state.dual.role?ids[1]:ids[0];}
  state.dual.phase='play';state.dual.index=0;state.dual.reveal=0;state.dual.notes=[];dualNotice='';
  save();dualUnlock();render();
@@ -423,18 +423,59 @@ function dualStreakHtml(){
  const n=dualStreak>0?dualStreak:0,width=Math.min(100,n*20);
  return '<span class="dual-streak" aria-label="Фраз подряд без ошибок: '+n+'"><span class="dual-streak-count" aria-hidden="true">🔥 '+n+'</span><span class="dual-streak-label">подряд</span><span class="dual-streak-bar" role="progressbar" aria-valuemin="0" aria-valuemax="5" aria-valuenow="'+Math.min(5,n)+'"><span style="width:'+width+'%"></span></span></span>';
 }
+function dualPitch(speaker){
+ const scene=dualScene(),first=scene&&scene.characters[0]&&scene.characters[0].id;
+ return speaker===first?1.08:0.84;
+}
+function dualScrollCue(){
+ const node=document.querySelector('#dualScript .is-speaking')||document.querySelector('#dualScript .is-current');
+ if(!node||!node.getBoundingClientRect)return;
+ const rect=node.getBoundingClientRect();
+ const header=document.querySelector('.site-header');
+ const topLimit=(header&&header.getBoundingClientRect?header.getBoundingClientRect().bottom:0)+12;
+ const bar=document.querySelector('.dual-preview-bar');
+ const bottomLimit=(bar&&bar.getBoundingClientRect?bar.getBoundingClientRect().top:window.innerHeight)-12;
+ if(rect.top<topLimit)window.scrollBy(0,rect.top-topLimit);
+ else if(rect.bottom>bottomLimit)window.scrollBy(0,rect.bottom-bottomLimit);
+}
 function dualReadLine(){
- if(!state.dual||state.dual.phase!=='listen'||dualReadPaused)return;
+ if(!state.dual||state.dual.phase!=='picker'||dualPreview!=='run')return;
  const scene=dualScene(),line=scene&&scene.lines[state.dual.index];
- if(!line){dualReadPlaying=false;render();return;}
- dualReadPlaying=true;render();
- const first=scene.characters[0]&&scene.characters[0].id;
+ if(!line){dualPreview='';dualReadPlaying=false;dualSpoken=-1;state.dual.index=0;render();return;}
+ const index=state.dual.index;
+ dualReadPlaying=true;dualSpoken=index;render();dualScrollCue();
  dualSpeak(line.en,()=>{
-  if(!state.dual||state.dual.phase!=='listen'||dualReadPaused)return;
+  if(!state.dual||state.dual.phase!=='picker'||dualPreview!=='run'||state.dual.index!==index)return;
   state.dual.index+=1;
-  if(!scene.lines[state.dual.index]){dualReadPlaying=false;state.dual.index=scene.lines.length-1;save();render();return;}
+  if(!scene.lines[state.dual.index]){dualPreview='';dualReadPlaying=false;dualSpoken=-1;state.dual.index=0;save();render();return;}
   save();dualReadLine();
- },state.dual.slow?0.75:0.95,'en-US',line.speaker===first?1.08:0.84);
+ },state.dual.slow?0.75:0.95,'en-US',dualPitch(line.speaker));
+}
+function dualPreviewSay(index){
+ const scene=dualScene(),line=scene&&scene.lines[index];
+ if(!line||!state.dual||state.dual.phase!=='picker')return;
+ dualPreview='line';dualReadPaused=true;dualReadPlaying=false;dualStopAudio();
+ state.dual.index=index;dualSpoken=index;dualUnlock();render();dualScrollCue();
+ dualSpeak(line.en,()=>{
+  if(dualPreview!=='line'||dualSpoken!==index)return;
+  dualPreview='';dualSpoken=-1;render();
+ },state.dual.slow?0.75:0.95,'en-US',dualPitch(line.speaker));
+}
+function dualPreviewBar(){
+ if(dualPreview==='line')return '<div class="dual-preview-bar"><button type="button" class="dual-secondary dual-stop" data-dual-action="preview-stop">Стоп</button></div>';
+ if(dualPreview!=='run'&&dualPreview!=='pause')return '';
+ return '<div class="dual-preview-bar"><button type="button" class="dialogue-primary dual-listen" data-dual-action="preview-toggle">'+(dualPreview==='run'?'Пауза':'Продолжить')+'</button><button type="button" class="dual-secondary dual-stop" data-dual-action="preview-stop">Стоп</button></div>';
+}
+function dualScriptHtml(scene,d){
+ let html='<div class="dual-script" id="dualScript">';
+ for(let i=0;i<scene.lines.length;i++){
+  const line=scene.lines[i],yours=!!d.role&&line.speaker===d.role;
+  const current=(dualPreview==='run'||dualPreview==='pause')&&i===d.index?' is-current':'';
+  const speaking=dualSpoken===i?' is-speaking':'';
+  const ru=line.ru?'<span class="dual-ru">'+esc(line.ru)+'</span>':'';
+  html+='<article class="dual-line'+(yours?' is-mine':'')+current+speaking+'"><button type="button" class="dual-line-hit" data-dual-say="'+i+'" aria-label="Прослушать реплику '+esc(dualName(line.speaker))+'"><span class="dual-line-who">'+esc(dualName(line.speaker))+(yours?' · ты':'')+'</span><span class="dual-en" lang="en">'+esc(line.en)+'</span>'+ru+'</button></article>';
+ }
+ return html+'</div>';
 }
 function dualCoachWord(){return dualCoach&&dualCoach.words[0]||null;}
 function dualBeginCoach(mismatches){
@@ -490,9 +531,9 @@ function dualListenWord(){
 function dualClick(b){
  if(b.dataset.dualWord){const card=b.closest('[data-dual-line]');const scene=dualScene();const line=scene&&scene.lines[Number(card&&card.dataset.dualLine)];if(line)bridge().openWord?.(b,b.dataset.dualWord,line.en,line.ru);return;}
  if(b.dataset.dualSave!=null&&b.dataset.dualSave!==''){const scene=dualScene();const line=scene&&scene.lines[Number(b.dataset.dualSave)];if(line)bridge().savePhrase?.(line.en,line.ru);return;}
- if(b.dataset.dualSay!=null&&b.dataset.dualSay!==''){const scene=dualScene();const line=scene&&scene.lines[Number(b.dataset.dualSay)];if(line){dualUnlock();dualSpeak(line.en,()=>{if(dualAuto)dualAutoKick();});}return;}
+ if(b.dataset.dualSay!=null&&b.dataset.dualSay!==''){const scene=dualScene();const index=Number(b.dataset.dualSay);const line=scene&&scene.lines[index];if(line){if(state.dual&&state.dual.phase==='picker')dualPreviewSay(index);else{dualUnlock();dualSpeak(line.en,()=>{if(dualAuto)dualAutoKick();});}}return;}
  switch(b.dataset.dualAction){
-  case 'back':dualAuto=false;dualCoach=null;dualStopAudio();state.dual=null;dualNotice='';save();render();break;
+  case 'back':dualAuto=false;dualCoach=null;dualPreview='';dualSpoken=-1;dualStopAudio();state.dual=null;dualNotice='';save();render();break;
   case 'role':if(state.dual&&b.dataset.dualRole){state.dual.role=b.dataset.dualRole;save();render();}break;
   case 'begin':dualBegin();break;
   case 'slow':if(state.dual){state.dual.slow=!state.dual.slow;save();render();}break;
@@ -503,9 +544,9 @@ function dualClick(b){
   case 'coach-next':dualCoachNext();break;
   case 'coach-save':{const item=dualCoachWord(),line=dualLine();if(item&&line){const shown=dualSurface(line.en,item);bridge().openWord?.(b,shown,line.en,line.ru);}break;}
   case 'say-one':if(b.dataset.dualOne){dualUnlock();dualSpeak(b.dataset.dualOne,()=>{if(dualAuto&&!dualCoach&&state.dual&&state.dual.phase==='play')dualAutoKick();},0.7,'en-US');}break;
-  case 'preview':if(state.dual&&state.dual.role){dualUnlock();dualAuto=false;dualCoach=null;dualStopAudio();state.dual.phase='listen';state.dual.index=0;dualReadPaused=false;dualReadPlaying=true;save();dualReadLine();}break;
-  case 'preview-toggle':if(state.dual&&state.dual.phase==='listen'){if(dualReadPlaying&&!dualReadPaused){dualReadPaused=true;dualStopAudio();dualReadPlaying=false;render();}else{dualUnlock();dualReadPaused=false;dualReadLine();}}break;
-  case 'preview-stop':if(state.dual&&state.dual.phase==='listen'){dualReadPaused=true;dualReadPlaying=false;state.dual.index=0;dualStopAudio();render();}break;
+  case 'preview':if(state.dual&&state.dual.phase==='picker'){dualUnlock();dualAuto=false;dualCoach=null;dualStopAudio();dualPreview='run';dualReadPaused=false;dualReadPlaying=true;state.dual.index=0;save();dualReadLine();}break;
+  case 'preview-toggle':if(state.dual&&state.dual.phase==='picker'&&dualPreview==='run'){dualPreview='pause';dualReadPaused=true;dualReadPlaying=false;dualSpoken=-1;dualStopAudio();render();dualScrollCue();}else if(state.dual&&state.dual.phase==='picker'&&dualPreview==='pause'){dualUnlock();dualPreview='run';dualReadPaused=false;dualReadLine();}break;
+  case 'preview-stop':if(state.dual&&state.dual.phase==='picker'){dualPreview='';dualReadPaused=true;dualReadPlaying=false;dualSpoken=-1;state.dual.index=0;dualStopAudio();render();}break;
   case 'speak':dualListen();break;
   case 'skip':dualStopAudio();dualFinishTurn('',false);break;
   case 'hint':dualHint();break;
@@ -518,7 +559,7 @@ function dualMarkup(){
  const d=state.dual,scene=dualScene();if(!d||!scene)return setup();
  const back='<button type="button" class="dialogue-link" data-dual-action="back">К темам</button>';
  if(d.phase==='picker'){
-  return '<section class="dual-screen"><div class="dialogue-kicker">ДВОЙНОЙ ДИАЛОГ</div><h1>'+esc(topics[d.topic].title)+'</h1><p>Выбери, за кого говорить. Второго персонажа озвучит приложение. Можно слушать обе роли и сохранять слова.</p><div class="dual-roles">'+scene.characters.map(c=>'<button type="button" class="dual-role'+(d.role===c.id?' is-selected':'')+'" data-dual-action="role" data-dual-role="'+esc(c.id)+'" aria-pressed="'+(d.role===c.id)+'">'+esc(c.name)+'</button>').join('')+'</div><div class="dialogue-start-row"><button type="button" class="dialogue-primary" data-dual-action="begin"'+(d.role?'':' disabled')+'>Начать</button><button type="button" class="dual-secondary" data-dual-action="preview"'+(d.role?'':' disabled')+'>Прослушать весь диалог</button></div>'+back+'</section>';
+  return '<section class="dual-screen'+(dualPreview?' is-previewing':'')+'"><div class="dialogue-kicker">ДВОЙНОЙ ДИАЛОГ</div><h1>'+esc(topics[d.topic].title)+'</h1><p>Выбери, за кого говорить. Сцена уже ниже: её можно прослушать целиком или нажать любую реплику. Второго персонажа озвучит приложение.</p><div class="dual-roles">'+scene.characters.map(c=>'<button type="button" class="dual-role'+(d.role===c.id?' is-selected':'')+'" data-dual-action="role" data-dual-role="'+esc(c.id)+'" aria-pressed="'+(d.role===c.id)+'">'+esc(c.name)+'</button>').join('')+'</div><div class="dialogue-start-row"><button type="button" class="dialogue-primary" data-dual-action="begin"'+(d.role?'':' disabled')+'>Начать</button><button type="button" class="dialogue-primary dual-listen" data-dual-action="preview">Прослушать весь диалог</button></div>'+back+dualScriptHtml(scene,d)+dualPreviewBar()+'</section>';
  }
  if(d.phase==='done'){
   const mine=dualName(d.role),other=scene.characters.map(c=>c.name).filter(name=>name!==mine).join(' и ');
