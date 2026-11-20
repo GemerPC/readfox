@@ -213,7 +213,7 @@ function deckFor(id){
 }
 function add(role,text,extra={}){const s=state.session;s.messages.push({id:s.nextId++,role,text,...extra});if(s.messages.length>80){const removed=s.messages.slice(0,-80).filter(m=>m.role==='user'||m.role==='bot').map(m=>({role:m.role==='bot'?'assistant':'user',content:m.text}));s.memory=compactMemory([...(s.memory||[]),...removed]);s.messages=s.messages.slice(-80);}}
 function start(){stop();state.session={id:sessionId(),completed:false,rewardXp:0,topic:state.selectedTopic,deck:deckFor(state.selectedTopic),messages:[],memory:[],nextId:1,draft:'',hint:'',pending:true,turns:0,checked:0,correct:0,used:[]};shown.clear();hintShown=false;error='';save();requestReply();}
-function stop(){voice?.stop();dualAuto=false;dualCoach=null;dualPreview='';dualSpoken=-1;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();settingsOpen=false;logShown=false;applyLive();requestNumber++;controller?.abort();controller=null;busy=false;save();}
+function stop(){voice?.stop();dualAuto=false;dualCoach=null;dualPreview='';dualSpoken=-1;dualTapIndex=-1;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();settingsOpen=false;logShown=false;applyLive();requestNumber++;controller?.abort();controller=null;busy=false;save();}
 async function requestReply(){
  const s=state.session;if(!s||busy||!s.pending||s.completed)return;
  if(voiceState.active)voice?.waiting();let spokenReply='';
@@ -250,7 +250,8 @@ function chat(){
  return `<div class="dialogue-chat is-live">${headerMarkup(s)}<div class="dialogue-messages" id="dialogueMessages" role="log" aria-live="polite" aria-label="Разговор с Фоксом"><div class="dlg-thread">${slides}<section id="dialogueVoiceInterim" class="dlg-slide is-user dlg-interim" hidden><span class="dlg-slide-who">Ты</span><p class="dlg-slide-text" lang="en"></p></section></div></div><div class="dialogue-composer-wrap"><button type="button" class="dlg-jump" id="dialogueJump" data-dialogue-action="jump" aria-label="К последней реплике" hidden>↓</button><p id="dialogueVoiceNotice" class="dlg-notice" role="status" hidden></p>${hintShown&&s.hint?`<div class="dialogue-ai-hint" lang="en">Например: ${esc(s.hint)}</div>`:''}<form id="dialogueForm" class="dialogue-composer"><button type="button" class="dlg-hint-btn" data-dialogue-action="hint" aria-pressed="${hintShown}" aria-label="${hintShown?'Скрыть пример':'Подсказка'}" title="${hintShown?'Скрыть пример':'Подсказка'}" ${!s.hint||disabled?'disabled':''}>${bulbIcon}</button><label class="sr-only" for="dialogueInput">Твой ответ</label><input id="dialogueInput" value="${esc(s.draft)}" placeholder="${busy?'Фокс пишет…':'Напиши ответ…'}" maxlength="800" autocomplete="off" enterkeyhint="send" ${disabled?'disabled':''}><button id="dialogueSend" type="submit" aria-label="Отправить ответ" ${disabled||!s.draft.trim()?'disabled':''}>↑</button></form></div></div>`;
 }
 
-let dualSynthInstance=null,dualRec=null,dualToken=0,dualListening=false,dualNotice='',dualAuto=false,dualTimer=null,dualCoach=null,dualSpeaking=false,dualStreak=0,dualGlowIndex=-1,dualReadPaused=true,dualReadPlaying=false,dualAudioCtx=null,dualPreview='',dualSpoken=-1,dualSpeakTimer=null,dualVoicesHooked=false;
+let dualSynthInstance=null,dualRec=null,dualToken=0,dualListening=false,dualNotice='',dualAuto=false,dualTimer=null,dualCoach=null,dualSpeaking=false,dualStreak=0,dualGlowIndex=-1,dualReadPaused=true,dualReadPlaying=false,dualAudioCtx=null,dualPreview='',dualSpoken=-1,dualSpeakTimer=null,dualVoicesHooked=false,dualEl=null,dualSilent='',dualHeld=false,dualTapIndex=-1;
+const dualClips=new Map();
 const COACH_INTRO='Почти! Вот это слово немного не похоже';
 const COACH_PRAISE='Отлично, теперь похоже!';
 function dualScene(){return window.ReadFoxDialogueScripts?.script(state.dual?.topic||state.selectedTopic)||null;}
@@ -265,7 +266,10 @@ function dualClearSpeakTimer(){if(dualSpeakTimer){clearTimeout(dualSpeakTimer);d
 function dualStopAudio(){
  dualToken++;dualListening=false;dualClearTimer();dualClearSpeakTimer();const rec=dualRec;dualRec=null;
  if(rec){rec.onresult=rec.onerror=rec.onend=null;try{rec.abort();}catch(_){ }if(rec.micId&&window.ReadFoxAudioLifecycle){window.ReadFoxAudioLifecycle.micEvent(rec.micId,'audio-ended');window.ReadFoxAudioLifecycle.endMic(rec.micId,{reason:'dual-stop'});}}
- try{dualSynth()?.cancel?.();}catch(_){ }
+ dualHaltOutput();
+ // Keep the unlocked player. cancel() without the flag suspends the audio graph, and iOS will not resume it after the mic.
+ try{if(dualSynthInstance)dualSynthInstance.cancel(true);}catch(_){}
+ try{window.speechSynthesis?.cancel?.();}catch(_){}
 }
 function dualStopAuto(){dualAuto=false;dualStopAudio();render();}
 function dualSpeak(text,onend,rate,lang,pitch){
@@ -285,22 +289,33 @@ function dualSpeak(text,onend,rate,lang,pitch){
 }
 function openDual(){
  if(state.session||!dualScene()){bridge().toast?.('Для этой темы пока нет двойного диалога.');return;}
- window.ReadFoxVoice?.stop?.();voice?.stop();dualAuto=false;dualCoach=null;dualPreview='';dualSpoken=-1;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();dualStreak=0;dualGlowIndex=-1;dualNotice='';
+ window.ReadFoxVoice?.stop?.();voice?.stop();dualAuto=false;dualCoach=null;dualPreview='';dualSpoken=-1;dualTapIndex=-1;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();dualStreak=0;dualGlowIndex=-1;dualNotice='';
  state.dual={phase:'picker',topic:state.selectedTopic,role:'',index:0,slow:!!state.dual?.slow,memory:!!state.dual?.memory,reveal:0,notes:[]};
  save();render();
 }
 function dualBegin(){
  const scene=dualScene();if(!state.dual||!scene||!state.dual.role)return;
- window.ReadFoxVoice?.stop?.();voice?.stop();dualCoach=null;dualPreview='';dualSpoken=-1;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();dualStreak=0;dualGlowIndex=-1;
+ window.ReadFoxVoice?.stop?.();voice?.stop();dualCoach=null;dualPreview='';dualSpoken=-1;dualTapIndex=-1;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();dualStreak=0;dualGlowIndex=-1;
  state.dual.phase='play';state.dual.index=0;state.dual.reveal=0;state.dual.notes=[];dualNotice='';
- save();dualUnlock();render();
+ save();dualUnlockOutput();dualUnlock();render();
  if(dualLine()&&dualLine().speaker!==state.dual.role)dualPlayPartner();
 }
-function dualPlayPartner(){const line=dualLine();if(!line||!state.dual||line.speaker===state.dual.role)return;dualSpeak(line.en,()=>{if(state.dual&&state.dual.phase==='play'&&dualLine()&&dualLine().speaker!==state.dual.role)dualAdvance();});}
+function dualPlayPartner(){
+ const line=dualLine();if(!line||!state.dual||line.speaker===state.dual.role)return;
+ const spoken=line.en,speaker=line.speaker;
+ const go=()=>{
+  if(!state.dual||state.dual.phase!=='play')return;
+  const current=dualLine();if(!current||current.en!==spoken||current.speaker===state.dual.role)return;
+  dualPlayCloud(spoken,speaker,()=>{if(state.dual&&state.dual.phase==='play'&&dualLine()&&dualLine().en===spoken&&dualLine().speaker!==state.dual.role)dualAdvance();},()=>{if(!state.dual||dualLine()?.en!==spoken)return;dualTapIndex=state.dual.index;render();});
+ };
+ const wait=window.ReadFoxAudioLifecycle?.waitForMicrophones?.();
+ if(wait&&typeof wait.then==='function')wait.then(()=>{dualResumeOutput();go();});
+ else{dualResumeOutput();go();}
+}
 function dualAutoKick(){
  if(!dualAuto||!state.dual||state.dual.phase!=='play')return;
  const line=dualLine();if(!line)return;
- if(line.speaker!==state.dual.role){dualSpeak(line.en,()=>{if(dualAuto&&state.dual&&state.dual.phase==='play'&&dualLine()&&dualLine().speaker!==state.dual.role)dualAdvance();});return;}
+ if(line.speaker!==state.dual.role){dualPlayPartner();return;}
  if(dualCanListen()){dualListen(true);return;}
  dualSpeak(line.en,()=>{if(dualAuto&&state.dual&&state.dual.phase==='play'&&dualLine()&&dualLine().speaker===state.dual.role)dualFinishTurn('',false);});
 }
@@ -360,7 +375,7 @@ function dualListen(auto){
  if(!state.dual||dualListening||!dualCanListen())return;
  const line=dualLine();if(!line||line.speaker!==state.dual.role)return;
  const Rec=window.SpeechRecognition||window.webkitSpeechRecognition;
- dualStopAudio();dualListening=true;dualNotice='';render();
+ dualUnlockOutput();dualStopAudio();dualListening=true;dualNotice='';render();
  const rec=new Rec();dualRec=rec;rec.lang='en-US';rec.interimResults=true;rec.continuous=false;
  const life=window.ReadFoxAudioLifecycle;rec.micId=life?.beginMic('dual');
  let said='';
@@ -390,10 +405,10 @@ function dualListen(auto){
 }
 function dualRestart(swap){
  const scene=dualScene();if(!state.dual||!scene)return;
- window.ReadFoxVoice?.stop?.();voice?.stop();dualAuto=false;dualCoach=null;dualPreview='';dualSpoken=-1;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();dualStreak=0;dualGlowIndex=-1;
+ window.ReadFoxVoice?.stop?.();voice?.stop();dualAuto=false;dualCoach=null;dualPreview='';dualSpoken=-1;dualTapIndex=-1;dualReadPlaying=false;dualReadPaused=true;dualStopAudio();dualStreak=0;dualGlowIndex=-1;
  if(swap){const ids=scene.characters.map(c=>c.id);state.dual.role=ids[0]===state.dual.role?ids[1]:ids[0];}
  state.dual.phase='play';state.dual.index=0;state.dual.reveal=0;state.dual.notes=[];dualNotice='';
- save();dualUnlock();render();
+ save();dualUnlockOutput();dualUnlock();render();
  if(dualLine()&&dualLine().speaker!==state.dual.role)dualPlayPartner();
 }
 function dualCovers(token,normalized){
@@ -424,9 +439,131 @@ function dualStreakHtml(){
  const n=dualStreak>0?dualStreak:0,width=Math.min(100,n*20);
  return '<span class="dual-streak" aria-label="Фраз подряд без ошибок: '+n+'"><span class="dual-streak-count" aria-hidden="true">🔥 '+n+'</span><span class="dual-streak-label">подряд</span><span class="dual-streak-bar" role="progressbar" aria-valuemin="0" aria-valuemax="5" aria-valuenow="'+Math.min(5,n)+'"><span style="width:'+width+'%"></span></span></span>';
 }
-function dualPitch(speaker){
- const scene=dualScene(),first=scene&&scene.characters[0]&&scene.characters[0].id;
- return speaker===first?1.08:0.84;
+function dualVoiceName(speaker){return speaker==='hailey'?'hailey':'tommy';}
+function dualMakeSilent(){
+ const bytes=new ArrayBuffer(44),view=new DataView(bytes);
+ const write=(at,text)=>{for(let i=0;i<text.length;i++)view.setUint8(at+i,text.charCodeAt(i));};
+ write(0,'RIFF');view.setUint32(4,36,true);write(8,'WAVE');write(12,'fmt ');
+ view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);
+ view.setUint32(24,8000,true);view.setUint32(28,16000,true);view.setUint16(32,2,true);view.setUint16(34,16,true);
+ write(36,'data');view.setUint32(40,0,true);
+ return URL.createObjectURL(new Blob([bytes],{type:'audio/wav'}));
+}
+function dualEnsureOutput(){
+ if(dualEl)return dualEl;
+ const Ctor=window.Audio;if(typeof Ctor!=='function')return null;
+ dualEl=new Ctor();dualEl.preload='auto';dualEl.volume=1;
+ try{dualEl.setAttribute('playsinline','');dualEl.setAttribute('webkit-playsinline','');}catch(_){}
+ return dualEl;
+}
+function dualUnlockOutput(){
+ const el=dualEnsureOutput();if(!el)return;
+ if(!dualSilent){try{dualSilent=dualMakeSilent();}catch(_){dualSilent='';}}
+ try{
+  el.onended=el.onerror=null;
+  if(dualSilent&&el.src!==dualSilent)el.src=dualSilent;
+  const pending=el.play();
+  if(pending&&pending.catch)pending.catch(()=>{});
+  dualHeld=true;
+ }catch(_){}
+ dualResumeOutput();
+}
+function dualResumeOutput(){
+ try{if(dualAudioCtx&&dualAudioCtx.state==='suspended')dualAudioCtx.resume();}catch(_){}
+ try{if(dualSynthInstance&&dualSynthInstance.resume)dualSynthInstance.resume();}catch(_){}
+}
+function dualHaltOutput(){
+ const el=dualEl;if(!el)return;
+ el.onended=el.onerror=null;
+ if(el.src&&el.src!==dualSilent){try{el.pause();}catch(_){}}
+}
+function dualFetchLine(text,speaker){
+ const voice=dualVoiceName(speaker),key=voice+'\n'+text,hit=dualClips.get(key);if(hit)return hit;
+ const endpoint=(window.READFOX_CONFIG&&window.READFOX_CONFIG.speechEndpoint)||'https://readfox.gemerpc.workers.dev/speech';
+ const job=fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,voice:voice})}).then(response=>{
+  const type=response.headers.get('Content-Type')||'';
+  if(!response.ok||type.indexOf('audio/')!==0)throw new Error('speech');
+  return response.arrayBuffer();
+ }).then(bytes=>URL.createObjectURL(new Blob([bytes],{type:'audio/mpeg'})));
+ job.catch(()=>{dualClips.delete(key);});
+ dualClips.set(key,job);
+ return job;
+}
+function dualPrefetchNext(){
+ const scene=dualScene();if(!state.dual||!scene)return;
+ const next=scene.lines[state.dual.index+1];
+ if(next)dualFetchLine(next.en,next.speaker).catch(()=>{});
+}
+function dualNamedVoices(){
+ const native=window.speechSynthesis;let voices=[];
+ try{voices=native&&native.getVoices?native.getVoices()||[]:[];}catch(_){voices=[];}
+ const english=[];
+ for(let i=0;i<voices.length;i++)if(/^en/i.test(String(voices[i]&&voices[i].lang||'')))english.push(voices[i]);
+ const femaleName=/samantha|karen|moira|tessa|victoria|fiona|kate|serena|martha|allison|ava|susan|zira|hazel|nicky|veena|female/i;
+ const maleName=/daniel|alex|fred|aaron|david|rishi|arthur|gordon|oliver|nathan|ralph|albert|bruce|male/i;
+ let female=null,male=null;
+ for(let i=0;i<english.length;i++){
+  const name=String(english[i].name||'');
+  if(!female&&(name.toLowerCase().indexOf('female')!==-1||femaleName.test(name)))female=english[i];
+  if(!male&&name.toLowerCase().indexOf('female')===-1&&(name.toLowerCase().indexOf('male')!==-1||maleName.test(name)))male=english[i];
+ }
+ if(!male)male=english[0]||null;
+ if(!female)female=english.length>1?english[english[0]===male?1:0]:male;
+ if(female&&male&&female===male&&english.length>1){for(let i=0;i<english.length;i++)if(english[i]!==male){female=english[i];break;}}
+ return {tommy:male,hailey:female&&female!==male?female:female};
+}
+function dualSystemSpeak(text,speaker,rate,onend,onblock){
+ const native=window.speechSynthesis;
+ if(!native||typeof native.speak!=='function'){if(onblock)onblock();return;}
+ const utterance=new SpeechSynthesisUtterance(text);
+ utterance.lang='en-US';utterance.rate=rate||0.95;
+ try{const pair=dualNamedVoices();const chosen=speaker==='hailey'?pair.hailey:pair.tommy;if(chosen)utterance.voice=chosen;}catch(_){}
+ utterance.onend=()=>{if(onend)onend();};
+ utterance.onerror=event=>{
+  const reason=event&&event.error;
+  if(reason==='interrupted'||reason==='canceled'||reason==='cancelled')return;
+  if((reason==='not-allowed'||reason==='not-allowed-error')&&onblock)onblock();
+  else if(onend)onend();
+ };
+ try{native.resume?.();native.speak(utterance);}catch(_){if(onblock)onblock();}
+}
+function dualPlayUrl(url,rate,still,onend,onfail,onstart){
+ const el=dualEnsureOutput();if(!el){onfail('missing');return;}
+ el.onended=el.onerror=null;
+ try{el.pause();}catch(_){}
+ try{el.src=url;el.playbackRate=rate||1;}catch(_){}
+ let pending;
+ try{pending=el.play();}catch(error){onfail(error&&error.name==='NotAllowedError'?'blocked':'media');return;}
+ const arm=()=>{
+  if(!still())return;
+  if(onstart)onstart();
+  el.onended=()=>{el.onended=el.onerror=null;onend();};
+  el.onerror=()=>{el.onended=el.onerror=null;onfail('media');};
+ };
+ if(pending&&typeof pending.then==='function')pending.then(()=>arm()).catch(error=>{if(!still())return;onfail(error&&error.name==='NotAllowedError'?'blocked':'media');});
+ else arm();
+}
+function dualPlayCloud(text,speaker,onend,onblock){
+ const token=++dualToken;dualClearSpeakTimer();
+ const value=String(text||'').trim();if(!value){if(onend)onend();return;}
+ const loading=dualFetchLine(value,speaker);
+ dualPrefetchNext();
+ const rate=state.dual&&state.dual.slow?0.75:0.95;
+ let settled=false;
+ const finish=blocked=>{
+  if(settled||token!==dualToken)return;
+  settled=true;dualClearSpeakTimer();dualSpeaking=false;
+  if(blocked){if(onblock)onblock();return;}
+  if(onend)onend();
+ };
+ const words=value.split(/\s+/).filter(Boolean).length||1;
+ const armTimer=()=>{dualClearSpeakTimer();dualSpeakTimer=setTimeout(()=>finish(false),Math.min(20000,Math.max(4000,Math.round(words*700/rate)+1200)));};
+ dualSpeaking=true;
+ const system=()=>{if(token!==dualToken)return;armTimer();dualSystemSpeak(value,speaker,rate,()=>finish(false),()=>finish(true));};
+ loading.then(url=>{
+  if(token!==dualToken)return;
+  dualPlayUrl(url,rate,()=>token===dualToken,()=>finish(false),reason=>reason==='blocked'?finish(true):system(),armTimer);
+ }).catch(()=>{if(token===dualToken)system();});
 }
 function dualScrollCue(){
  const node=document.querySelector('#dualScript .is-speaking')||document.querySelector('#dualScript .is-current');
@@ -446,71 +583,29 @@ function dualWarmVoices(){
  try{native.getVoices();}catch(_){}
  try{native.addEventListener?.('voiceschanged',()=>{try{native.getVoices();}catch(_){}});}catch(_){}
 }
-function dualPreviewVoice(native,lang){
- let voices=[];try{voices=native.getVoices?.()||[];}catch(_){return null;}
- const russian=String(lang||'').toLowerCase().indexOf('ru')===0;let any=null;
- for(let i=0;i<voices.length;i++){
-  const code=String(voices[i]&&voices[i].lang||'').toLowerCase();
-  if(russian){if(code.indexOf('ru')===0)return voices[i];}
-  else if(code==='en-us')return voices[i];
-  else if(!any&&code.indexOf('en')===0)any=voices[i];
- }
- return russian?null:any;
-}
-// The role-screen preview must call speechSynthesis.speak in the click itself.
-// dualSpeak waits on a promise and the dialogue player speaks through /speech, so iOS and Chrome stay silent.
-function dualPreviewSpeak(text,onend,rate,pitch,lang){
- const token=++dualToken;dualClearSpeakTimer();
- const value=String(text||'').trim();if(!value){if(onend)onend();return;}
- const native=window.speechSynthesis;
- if(!native||typeof native.speak!=='function'){dualSpeak(value,onend,rate,lang,pitch);return;}
- const utterance=new SpeechSynthesisUtterance(value);
- utterance.lang=lang||'en-US';utterance.rate=rate||dualRate();
- const pitched=Number(pitch);if(pitched>=0.5&&pitched<=2)utterance.pitch=pitched;
- try{const voice=dualPreviewVoice(native,utterance.lang);if(voice)utterance.voice=voice;}catch(_){}
- let settled=false;
- const finish=event=>{
-  if(settled||token!==dualToken)return;
-  const reason=event&&(event.error||'');
-  if(reason==='interrupted'||reason==='canceled'||reason==='cancelled')return;
-  settled=true;dualClearSpeakTimer();dualSpeaking=false;if(onend)onend();
- };
- utterance.onend=()=>finish();
- utterance.onerror=event=>finish(event);
- const words=value.split(/\s+/).filter(Boolean).length||1,speed=utterance.rate>0?utterance.rate:1;
- dualSpeakTimer=setTimeout(()=>finish(),Math.min(20000,Math.max(3500,Math.round(words*700/speed)+1200)));
- dualSpeaking=true;
- const say=target=>{
-  try{native.resume?.();}catch(_){}
-  if(native.speaking||native.pending){try{native.cancel?.();}catch(_){}try{native.resume?.();}catch(_){}}
-  native.speak(target);
-  try{if(native.paused)native.resume?.();}catch(_){}
- };
- try{say(utterance);}catch(_){try{utterance.voice=null;utterance.pitch=1;say(utterance);}catch(_){finish();}}
-}
 function dualReadLine(){
  if(!state.dual||state.dual.phase!=='picker'||dualPreview!=='run')return;
  const scene=dualScene(),line=scene&&scene.lines[state.dual.index];
  if(!line){dualPreview='';dualReadPlaying=false;dualSpoken=-1;state.dual.index=0;render();return;}
  const index=state.dual.index;
  dualReadPlaying=true;dualSpoken=index;render();dualScrollCue();
- dualPreviewSpeak(line.en,()=>{
+ dualPlayCloud(line.en,line.speaker,()=>{
   if(!state.dual||state.dual.phase!=='picker'||dualPreview!=='run'||state.dual.index!==index)return;
   state.dual.index+=1;
   if(!scene.lines[state.dual.index]){dualPreview='';dualReadPlaying=false;dualSpoken=-1;state.dual.index=0;save();render();return;}
   save();dualReadLine();
- },state.dual.slow?0.75:0.95,dualPitch(line.speaker),'en-US');
+ },()=>{});
 }
 function dualPreviewSay(index){
  const scene=dualScene(),line=scene&&scene.lines[index];
  if(!line||!state.dual||state.dual.phase!=='picker')return;
- dualWarmVoices();
+ dualWarmVoices();dualUnlockOutput();
  dualPreview='line';dualReadPaused=true;dualReadPlaying=false;
  state.dual.index=index;dualSpoken=index;render();dualScrollCue();
- dualPreviewSpeak(line.en,()=>{
+ dualPlayCloud(line.en,line.speaker,()=>{
   if(dualPreview!=='line'||dualSpoken!==index)return;
   dualPreview='';dualSpoken=-1;render();
- },state.dual.slow?0.75:0.95,dualPitch(line.speaker),'en-US');
+ },()=>{});
 }
 function dualPreviewBar(){
  if(dualPreview==='line')return '<div class="dual-preview-bar"><button type="button" class="dual-secondary dual-stop" data-dual-action="preview-stop">Стоп</button></div>';
@@ -560,7 +655,7 @@ function dualListenWord(){
  const item=dualCoachWord();if(!item||!state.dual||dualListening||!dualCanListen())return;
  const Rec=window.SpeechRecognition||window.webkitSpeechRecognition;
  const target=item;
- dualStopAudio();dualListening=true;render();
+ dualUnlockOutput();dualStopAudio();dualListening=true;render();
  const rec=new Rec();dualRec=rec;rec.lang='en-US';rec.interimResults=false;rec.continuous=false;
  const life=window.ReadFoxAudioLifecycle;rec.micId=life?.beginMic('dual-word');
  let said='';
@@ -582,26 +677,26 @@ function dualListenWord(){
 function dualClick(b){
  if(b.dataset.dualWord){const card=b.closest('[data-dual-line]');const scene=dualScene();const line=scene&&scene.lines[Number(card&&card.dataset.dualLine)];if(line)bridge().openWord?.(b,b.dataset.dualWord,line.en,line.ru);return;}
  if(b.dataset.dualSave!=null&&b.dataset.dualSave!==''){const scene=dualScene();const line=scene&&scene.lines[Number(b.dataset.dualSave)];if(line)bridge().savePhrase?.(line.en,line.ru);return;}
- if(b.dataset.dualSay!=null&&b.dataset.dualSay!==''){const scene=dualScene();const index=Number(b.dataset.dualSay);const line=scene&&scene.lines[index];if(line){if(state.dual&&state.dual.phase==='picker')dualPreviewSay(index);else{dualUnlock();dualSpeak(line.en,()=>{if(dualAuto)dualAutoKick();});}}return;}
+ if(b.dataset.dualSay!=null&&b.dataset.dualSay!==''){const scene=dualScene();const index=Number(b.dataset.dualSay);const line=scene&&scene.lines[index];if(line){if(state.dual&&state.dual.phase==='picker')dualPreviewSay(index);else{dualUnlockOutput();dualTapIndex=-1;dualPlayCloud(line.en,line.speaker,()=>{if(dualAuto)dualAutoKick();},()=>{dualTapIndex=index;render();});}}return;}
  switch(b.dataset.dualAction){
   case 'back':dualAuto=false;dualCoach=null;dualPreview='';dualSpoken=-1;dualStopAudio();state.dual=null;dualNotice='';save();render();break;
   case 'role':if(state.dual&&b.dataset.dualRole){state.dual.role=b.dataset.dualRole;save();render();}break;
   case 'begin':dualBegin();break;
   case 'slow':if(state.dual){state.dual.slow=!state.dual.slow;save();render();}break;
   case 'memory':if(state.dual){state.dual.memory=!state.dual.memory;if(!state.dual.memory)state.dual.reveal=0;save();render();}break;
-  case 'auto':if(dualAuto)dualStopAuto();else{dualUnlock();dualAuto=true;window.ReadFoxVoice?.stop?.();voice?.stop();render();if(dualCoach){if(!dualSpeaking)dualListenWord();}else dualAutoKick();}break;
+  case 'auto':if(dualAuto)dualStopAuto();else{dualUnlockOutput();dualUnlock();dualAuto=true;window.ReadFoxVoice?.stop?.();voice?.stop();render();if(dualCoach){if(!dualSpeaking)dualListenWord();}else dualAutoKick();}break;
   case 'coach-repeat':dualUnlock();dualListenWord();break;
   case 'coach-replay':dualUnlock();dualPromptCoach(false);break;
   case 'coach-next':dualCoachNext();break;
   case 'coach-save':{const item=dualCoachWord(),line=dualLine();if(item&&line){const shown=dualSurface(line.en,item);bridge().openWord?.(b,shown,line.en,line.ru);}break;}
   case 'say-one':if(b.dataset.dualOne){dualUnlock();dualSpeak(b.dataset.dualOne,()=>{if(dualAuto&&!dualCoach&&state.dual&&state.dual.phase==='play')dualAutoKick();},0.7,'en-US');}break;
-  case 'preview':if(state.dual&&state.dual.phase==='picker'){dualWarmVoices();dualAuto=false;dualCoach=null;dualPreview='run';dualReadPaused=false;dualReadPlaying=true;state.dual.index=0;save();dualReadLine();}break;
-  case 'preview-toggle':if(state.dual&&state.dual.phase==='picker'&&dualPreview==='run'){dualPreview='pause';dualReadPaused=true;dualReadPlaying=false;dualSpoken=-1;dualStopAudio();render();dualScrollCue();}else if(state.dual&&state.dual.phase==='picker'&&dualPreview==='pause'){dualUnlock();dualPreview='run';dualReadPaused=false;dualReadLine();}break;
+  case 'preview':if(state.dual&&state.dual.phase==='picker'){dualWarmVoices();dualUnlockOutput();dualAuto=false;dualCoach=null;dualPreview='run';dualReadPaused=false;dualReadPlaying=true;state.dual.index=0;save();dualReadLine();}break;
+  case 'preview-toggle':if(state.dual&&state.dual.phase==='picker'&&dualPreview==='run'){dualPreview='pause';dualReadPaused=true;dualReadPlaying=false;dualSpoken=-1;dualStopAudio();render();dualScrollCue();}else if(state.dual&&state.dual.phase==='picker'&&dualPreview==='pause'){dualWarmVoices();dualUnlockOutput();dualPreview='run';dualReadPaused=false;dualReadLine();}break;
   case 'preview-stop':if(state.dual&&state.dual.phase==='picker'){dualPreview='';dualReadPaused=true;dualReadPlaying=false;dualSpoken=-1;state.dual.index=0;dualStopAudio();render();}break;
   case 'speak':dualListen();break;
   case 'skip':dualStopAudio();dualFinishTurn('',false);break;
   case 'hint':dualHint();break;
-  case 'partner':dualUnlock();dualPlayPartner();break;
+  case 'partner':dualUnlockOutput();dualTapIndex=-1;dualPlayPartner();break;
   case 'swap':dualRestart(true);break;
   case 'again':dualRestart(false);break;
  }
@@ -626,7 +721,8 @@ function dualMarkup(){
   const verdict=emoji?'<p class="dual-match"><span aria-hidden="true">'+emoji+'</span> '+(note&&note.kind==='ok'?'Близко к реплике.':coaching||note&&note.kind==='almost'?'Почти':note&&note.heard?'Идём дальше.':'Не расслышали. Идём дальше.')+'</p>':'';
   const glow=!dualMotionOk()||dualGlowIndex!==i?'':' is-glow';
   const speaking=reading&&dualReadPlaying&&current?' is-speaking':'';
-  bubbles.push('<article class="dual-bubble '+(learner?'is-learner':'is-partner')+(current?' is-current':'')+glow+speaking+'" data-dual-line="'+i+'"><header><span>'+esc(dualName(line.speaker))+(learner&&!reading?' · ты':'')+'</span><span class="dual-tools"><button type="button" class="dual-icon" data-dual-say="'+i+'" aria-label="Прослушать реплику '+esc(dualName(line.speaker))+'">'+dualSound+'</button><button type="button" class="dual-icon" data-dual-save="'+i+'" aria-label="Сохранить фразу">+</button></span></header><p class="dual-en" lang="en">'+english+'</p><p class="dual-ru">'+esc(line.ru)+'</p>'+(note&&note.heard?'<p class="dual-heard">Услышали: '+esc(note.heard)+'</p>':'')+verdict+'</article>');
+  const hear=!learner&&dualTapIndex===i?'<button type="button" class="dual-hear" data-dual-action="partner">▶ Послушать</button>':'';
+  bubbles.push('<article class="dual-bubble '+(learner?'is-learner':'is-partner')+(current?' is-current':'')+glow+speaking+'" data-dual-line="'+i+'"><header><span>'+esc(dualName(line.speaker))+(learner&&!reading?' · ты':'')+'</span><span class="dual-tools"><button type="button" class="dual-icon" data-dual-say="'+i+'" aria-label="Прослушать реплику '+esc(dualName(line.speaker))+'">'+dualSound+'</button><button type="button" class="dual-icon" data-dual-save="'+i+'" aria-label="Сохранить фразу">+</button></span></header><p class="dual-en" lang="en">'+english+'</p><p class="dual-ru">'+esc(line.ru)+'</p>'+(note&&note.heard?'<p class="dual-heard">Услышали: '+esc(note.heard)+'</p>':'')+verdict+hear+'</article>');
  }
  const line=scene.lines[d.index],learner=line&&line.speaker===mine;
  let bar='';
@@ -639,7 +735,7 @@ function dualMarkup(){
  }else if(learner){
   const listen=dualCanListen();
   bar='<div class="dual-bar"><div class="dual-bar-inner"><p id="dualInterim" class="dual-interim">'+(dualListening?'Слушаю…':'')+'</p>'+(dualNotice?'<p class="dual-notice">'+esc(dualNotice)+'</p>':'')+'<div class="dual-actions"><button type="button" class="dialogue-primary" data-dual-action="speak"'+(listen&&!dualListening?'':' disabled')+'>'+(dualListening?'Слушаю…':'Говорить')+'</button><button type="button" class="dual-secondary" data-dual-action="skip">Пропустить</button><button type="button" class="dual-secondary" data-dual-action="hint"'+(dualListening?' disabled':'')+'>Подсказка</button></div>'+(listen?'':'<p class="dual-notice">Распознавание недоступно. Нажми «Пропустить», чтобы продолжить.</p>')+'</div></div>';
- }else bar='<div class="dual-bar"><div class="dual-bar-inner"><div class="dual-actions"><button type="button" class="dialogue-primary" data-dual-action="partner">Слушать</button></div><p class="dual-notice">'+esc(dualName(line&&line.speaker))+' говорит. Микрофон выключен.</p></div></div>';
+ }else bar='<div class="dual-bar"><div class="dual-bar-inner"><div class="dual-actions"><button type="button" class="dialogue-primary" data-dual-action="partner">'+(dualTapIndex===d.index?'▶ Послушать':'Слушать')+'</button></div><p class="dual-notice">'+esc(dualName(line&&line.speaker))+' говорит. Микрофон выключен.</p></div></div>';
  return '<section class="dual-play"><header class="dual-top"><button type="button" class="dialogue-link" data-dual-action="back">К темам</button><strong>'+esc(topics[d.topic].title)+'</strong>'+dualStreakHtml()+'<span class="dual-toggles"><button type="button" class="dual-toggle" data-dual-action="auto" aria-pressed="'+dualAuto+'">'+(dualAuto?'Стоп':'Авто')+'</button><button type="button" class="dual-toggle" data-dual-action="memory" aria-pressed="'+d.memory+'">По памяти</button><button type="button" class="dual-toggle" data-dual-action="slow" aria-pressed="'+d.slow+'">Медленнее</button></span></header><div class="dual-log" id="dualLog">'+bubbles.join('')+'</div>'+bar+'</section>';
 }
 const dualSound='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M16 9.5a4 4 0 0 1 0 5"/></svg>';

@@ -17,7 +17,7 @@ function clearTimeout(id) {
 }
 function flush(ms) {
   const target = clock + ms;
-  for (let guard = 0; guard < 30; guard++) {
+  for (let guard = 0; guard < 40; guard++) {
     const due = pending.filter(entry => entry.fn && entry.due <= target).sort((a, b) => a.due - b.due);
     if (!due.length) break;
     clock = due[0].due;
@@ -28,38 +28,46 @@ function flush(ms) {
   clock = target;
 }
 
+const plays = [];
+const fetches = [];
 const spoken = [];
 let duringClick = false;
+let rejectAfter = 99;
+let failSpeech = false;
+let blobId = 1;
+class FakeAudio {
+  constructor() { this.src = ''; this.paused = true; this.playsinline = ''; }
+  setAttribute() {}
+  pause() { this.paused = true; }
+  play() {
+    const call = { src: this.src, sync: duringClick, el: this };
+    plays.push(call);
+    this.paused = false;
+    if (plays.length > rejectAfter) return Promise.reject(Object.assign(new Error('not allowed'), { name: 'NotAllowedError' }));
+    return Promise.resolve();
+  }
+}
 const speechSynthesis = {
   speaking: false,
   pending: false,
   paused: false,
   cancels: 0,
-  getVoices: () => [],
+  getVoices: () => [{ name: 'Daniel', lang: 'en-GB' }, { name: 'Samantha', lang: 'en-US' }],
   cancel() { this.cancels += 1; this.speaking = false; },
   resume() {},
-  speak(utterance) {
-    spoken.push({
-      text: utterance.text,
-      pitch: utterance.pitch,
-      rate: utterance.rate,
-      sync: duringClick,
-      utterance
-    });
-    this.speaking = true;
-    this.last = utterance;
-  }
+  speak(utterance) { spoken.push({ text: utterance.text, voice: utterance.voice && utterance.voice.name, sync: duringClick, utterance }); }
 };
 class SpeechSynthesisUtterance {
-  constructor(text) { this.text = text; this.rate = 1; this.pitch = 1; this.lang = ''; }
+  constructor(text) { this.text = text; this.rate = 1; this.pitch = 1; this.lang = ''; this.voice = null; }
 }
+class Rec {
+  start() { this.started = true; recs.push(this); if (this.onstart) this.onstart(); }
+  abort() {}
+}
+const recs = [];
+const cloud = { cancels: [], suspends: 0, prepare() {}, resume() { this.resumes = (this.resumes || 0) + 1; }, cancel(keep) { this.cancels.push(keep !== false); if (keep === false) this.suspends += 1; }, speak() { this.spoken = (this.spoken || 0) + 1; } };
 const clicks = [];
-const content = {
-  innerHTML: '',
-  dataset: {},
-  querySelectorAll: () => [],
-  addEventListener(type, fn) { if (type === 'click') clicks.push(fn); }
-};
+const content = { innerHTML: '', dataset: {}, querySelectorAll: () => [], addEventListener(type, fn) { if (type === 'click') clicks.push(fn); } };
 const storage = new Map();
 const document = {
   readyState: 'interactive',
@@ -70,29 +78,32 @@ const document = {
   documentElement: { style: { setProperty() {}, removeProperty() {} } },
   body: { classList: { toggle() {}, contains: () => false } }
 };
+let micGate = null;
 const window = {
   document,
+  Audio: FakeAudio,
   speechSynthesis,
   SpeechSynthesisUtterance,
+  SpeechRecognition: Rec,
+  isSecureContext: true,
   scrollBy() {},
   setTimeout,
   clearTimeout,
   addEventListener() {},
-  localStorage: {
-    getItem: key => storage.get(key) || null,
-    setItem(key, value) { storage.set(key, value); }
-  }
+  ReadFoxDialogueAudio: { createSynthesizer: () => cloud, supported: true, settings: () => ({ engine: 'audio', boost: 'off' }) },
+  ReadFoxAudioLifecycle: { waitForMicrophones: () => micGate, beginMic: () => 'mic-1', micEvent() {}, endMic() {}, snapshot: () => ({ activeRecognizers: 0 }) },
+  localStorage: { getItem: key => storage.get(key) || null, setItem(key, value) { storage.set(key, value); } }
 };
 window.window = window;
+function fetch(_url, init) {
+  const body = JSON.parse(init.body);
+  fetches.push({ body, sync: duringClick });
+  if (failSpeech) return Promise.resolve({ ok: false, headers: { get: () => 'application/json' } });
+  return Promise.resolve({ ok: true, headers: { get: () => 'audio/mpeg' }, arrayBuffer: async () => new ArrayBuffer(8) });
+}
 const sandbox = {
-  window,
-  document,
-  localStorage: window.localStorage,
-  SpeechSynthesisUtterance,
-  setTimeout,
-  clearTimeout,
-  console,
-  globalThis: null
+  window, document, localStorage: window.localStorage, SpeechSynthesisUtterance, Blob, URL: { createObjectURL: () => 'blob:' + (blobId++) , revokeObjectURL() {} },
+  fetch, setTimeout, clearTimeout, console, globalThis: null
 };
 sandbox.globalThis = sandbox;
 const context = createContext(sandbox);
@@ -101,69 +112,96 @@ runInContext(readFileSync(new URL('../js/dialogue.js', import.meta.url), 'utf8')
 const scripts = sandbox.window.ReadFoxDialogueScripts;
 const dialogue = sandbox.window.ReadFoxDialogue;
 
-function press(action) {
-  const button = { disabled: false, dataset: { dualAction: action }, closest: () => null };
-  const event = {
-    target: { closest: selector => selector === 'button' ? button : null },
-    stopPropagation() {}
-  };
+function press(dataset) {
+  const button = { disabled: false, dataset, closest: () => null };
+  const event = { target: { closest: selector => selector === 'button' ? button : null }, stopPropagation() {} };
   duringClick = true;
   clicks[0](event);
   duringClick = false;
 }
-function openPicker() {
-  spoken.length = 0;
-  speechSynthesis.cancels = 0;
-  speechSynthesis.speaking = false;
-  dialogue.importState({
-    version: 2,
-    selectedTopic: 'meet',
-    dual: { phase: 'picker', topic: 'meet', role: '', index: 0, slow: false, memory: false, reveal: 0, notes: [] }
-  });
+async function drain() { for (let i = 0; i < 12; i++) await Promise.resolve(); }
+function reset() {
+  plays.length = 0; fetches.length = 0; spoken.length = 0; recs.length = 0;
+  rejectAfter = 99; failSpeech = false; micGate = null; speechSynthesis.cancels = 0;
 }
 
-test('preview speaks each line from the click, in order, and still advances if onend never fires', () => {
+test('preview unlocks audio in the click and plays each cloud voice in order', async () => {
   assert.equal(clicks.length, 1);
   const scene = scripts.script('meet');
-  openPicker();
-  const cancelsBeforeSpeak = speechSynthesis.cancels;
-  press('preview');
-  assert.equal(spoken.length, 1);
-  assert.equal(spoken[0].sync, true);
-  assert.equal(spoken[0].text, scene.lines[0].en);
-  assert.ok(Math.abs(spoken[0].pitch - 1.08) < 0.001);
-  assert.equal(speechSynthesis.cancels, cancelsBeforeSpeak);
-  assert.match(content.innerHTML, /is-speaking[\s\S]{0,240}Hi, I am Tommy/);
-  assert.match(content.innerHTML, /Пауза/);
-  assert.match(content.innerHTML, /Стоп/);
+  reset();
+  dialogue.importState({ version: 2, selectedTopic: 'meet', dual: { phase: 'picker', topic: 'meet', role: '', index: 0, slow: false, memory: false, reveal: 0, notes: [] } });
+  plays.length = 0; fetches.length = 0;
+  press({ dualAction: 'preview' });
+  assert.ok(plays.length >= 1);
+  assert.equal(plays[0].sync, true);
+  assert.equal(fetches.length, 2);
+  assert.equal(fetches[0].sync, true);
+  assert.equal(fetches[0].body.voice, 'tommy');
+  assert.equal(fetches[0].body.text, scene.lines[0].en);
+  assert.equal(fetches[1].body.voice, 'hailey');
+  assert.equal(fetches[1].body.text, scene.lines[1].en);
+  await drain();
+  assert.ok(plays.length >= 2);
+  assert.equal(plays[1].el, plays[0].el);
+  assert.match(content.innerHTML, /is-speaking/);
+  plays[1].el.onended();
+  await drain();
+  const hailey = plays.filter(call => call !== plays[0] && call !== plays[1]);
+  assert.ok(hailey.length >= 1);
+  assert.equal(hailey[0].el, plays[0].el);
+  assert.equal(spoken.length, 0);
+});
 
+test('a failed cloud voice falls back to two different English voices', async () => {
+  reset();
+  failSpeech = true;
+  dialogue.importState({ version: 2, selectedTopic: 'cafe', dual: { phase: 'picker', topic: 'cafe', role: '', index: 0, slow: false, memory: false, reveal: 0, notes: [] } });
+  spoken.length = 0; plays.length = 0;
+  press({ dualAction: 'preview' });
+  await drain();
+  assert.equal(spoken.length, 1);
+  assert.equal(spoken[0].text, scripts.script('cafe').lines[0].en);
+  assert.equal(spoken[0].voice, 'Samantha');
   spoken[0].utterance.onend();
-  assert.equal(spoken.length, 2);
-  assert.equal(spoken[1].sync, false);
-  assert.equal(spoken[1].text, scene.lines[1].en);
-  assert.ok(Math.abs(spoken[1].pitch - 0.84) < 0.001);
-  assert.match(content.innerHTML, /is-speaking[\s\S]{0,240}I am Hailey/);
+  await drain();
+  assert.equal(spoken[1].text, scripts.script('cafe').lines[1].en);
+  assert.equal(spoken[1].voice, 'Daniel');
+});
 
-  openPicker();
-  press('preview');
-  assert.equal(spoken.length, 1);
-  flush(8000);
-  assert.equal(spoken.length, 2);
-  assert.equal(spoken[1].text, scene.lines[1].en);
+test('partner lines play after the user line, and a rejected play shows Послушать', async () => {
+  reset();
+  dialogue.importState({ version: 2, selectedTopic: 'daily', dual: { phase: 'picker', topic: 'daily', role: 'tommy', index: 0, slow: false, memory: false, reveal: 0, notes: [] } });
+  cloud.cancels.length = 0; cloud.suspends = 0; cloud.spoken = 0;
+  press({ dualAction: 'begin' });
+  press({ dualAction: 'speak' });
+  assert.ok(cloud.cancels.includes(true));
+  assert.equal(cloud.suspends, 0);
+  const heard = scripts.script('daily').lines[2].en;
+  dialogue.importState({ version: 2, selectedTopic: 'daily', dual: { phase: 'play', topic: 'daily', role: 'tommy', index: 2, slow: false, memory: false, reveal: 0, notes: [] } });
+  plays.length = 0; fetches.length = 0; cloud.spoken = 0; recs.length = 0;
+  let release;
+  micGate = new Promise(resolve => { release = resolve; });
+  press({ dualAction: 'speak' });
+  assert.equal(plays[0].sync, true);
+  recs[recs.length - 1].onresult({ results: [{ 0: { transcript: heard }, isFinal: true, length: 1 }] });
+  assert.equal(fetches.length, 0);
+  flush(300);
+  release();
+  await drain();
+  const partner = fetches.find(call => call.body.voice === 'hailey' && call.body.text.includes('bed'));
+  assert.ok(partner);
+  assert.equal(cloud.spoken, 0);
+  assert.ok(plays.length >= 2);
 
-  openPicker();
-  press('preview');
-  press('preview-toggle');
-  assert.ok(speechSynthesis.cancels > 0);
-  assert.match(content.innerHTML, /Продолжить/);
-  assert.doesNotMatch(content.innerHTML, /is-speaking/);
-  const before = spoken.length;
-  press('preview-toggle');
-  assert.equal(spoken.length, before + 1);
-  assert.equal(spoken[spoken.length - 1].sync, true);
-  assert.equal(spoken[spoken.length - 1].text, scene.lines[0].en);
-
-  press('preview-stop');
-  assert.doesNotMatch(content.innerHTML, /data-dual-action="preview-stop"/);
-  assert.match(content.innerHTML, /Прослушать весь диалог/);
+  plays.length = 0; fetches.length = 0; spoken.length = 0; rejectAfter = 1;
+  dialogue.importState({ version: 2, selectedTopic: 'daily', dual: { phase: 'play', topic: 'daily', role: 'tommy', index: 3, slow: false, memory: false, reveal: 0, notes: [] } });
+  plays.length = 0; fetches.length = 0;
+  press({ dualAction: 'partner' });
+  await drain();
+  assert.match(content.innerHTML, /▶ Послушать/);
+  assert.equal(spoken.length, 0);
+  const beforeIcon = plays.length;
+  press({ dualSay: '3' });
+  await drain();
+  assert.ok(plays.length > beforeIcon);
 });

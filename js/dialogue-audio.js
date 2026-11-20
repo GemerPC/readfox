@@ -381,7 +381,10 @@ function createSynthesizer() {
     get engine() { return settings.engine; },
     speak, cancel, prepare, preload,
     beforeCapture: async () => { await suspendOutput(); clearElement(); await window.ReadFoxSound?.release?.(); },
-    resume() { if (settings.engine === 'system') native?.resume(); },
+    resume() {
+      if (settings.engine === 'system') native?.resume();
+      else if (context && context.state === 'suspended') void context.resume().catch(() => {});
+    },
     getVoices() { return settings.engine === 'system' ? (native?.getVoices() || []) : []; }
   };
 }
