@@ -250,7 +250,7 @@ function chat(){
  return `<div class="dialogue-chat is-live">${headerMarkup(s)}<div class="dialogue-messages" id="dialogueMessages" role="log" aria-live="polite" aria-label="Разговор с Фоксом"><div class="dlg-thread">${slides}<section id="dialogueVoiceInterim" class="dlg-slide is-user dlg-interim" hidden><span class="dlg-slide-who">Ты</span><p class="dlg-slide-text" lang="en"></p></section></div></div><div class="dialogue-composer-wrap"><button type="button" class="dlg-jump" id="dialogueJump" data-dialogue-action="jump" aria-label="К последней реплике" hidden>↓</button><p id="dialogueVoiceNotice" class="dlg-notice" role="status" hidden></p>${hintShown&&s.hint?`<div class="dialogue-ai-hint" lang="en">Например: ${esc(s.hint)}</div>`:''}<form id="dialogueForm" class="dialogue-composer"><button type="button" class="dlg-hint-btn" data-dialogue-action="hint" aria-pressed="${hintShown}" aria-label="${hintShown?'Скрыть пример':'Подсказка'}" title="${hintShown?'Скрыть пример':'Подсказка'}" ${!s.hint||disabled?'disabled':''}>${bulbIcon}</button><label class="sr-only" for="dialogueInput">Твой ответ</label><input id="dialogueInput" value="${esc(s.draft)}" placeholder="${busy?'Фокс пишет…':'Напиши ответ…'}" maxlength="800" autocomplete="off" enterkeyhint="send" ${disabled?'disabled':''}><button id="dialogueSend" type="submit" aria-label="Отправить ответ" ${disabled||!s.draft.trim()?'disabled':''}>↑</button></form></div></div>`;
 }
 
-let dualSynthInstance=null,dualRec=null,dualToken=0,dualListening=false,dualNotice='',dualAuto=false,dualTimer=null,dualCoach=null,dualSpeaking=false,dualStreak=0,dualGlowIndex=-1,dualReadPaused=true,dualReadPlaying=false,dualAudioCtx=null,dualPreview='',dualSpoken=-1;
+let dualSynthInstance=null,dualRec=null,dualToken=0,dualListening=false,dualNotice='',dualAuto=false,dualTimer=null,dualCoach=null,dualSpeaking=false,dualStreak=0,dualGlowIndex=-1,dualReadPaused=true,dualReadPlaying=false,dualAudioCtx=null,dualPreview='',dualSpoken=-1,dualSpeakTimer=null,dualVoicesHooked=false;
 const COACH_INTRO='Почти! Вот это слово немного не похоже';
 const COACH_PRAISE='Отлично, теперь похоже!';
 function dualScene(){return window.ReadFoxDialogueScripts?.script(state.dual?.topic||state.selectedTopic)||null;}
@@ -261,8 +261,9 @@ function dualCanListen(){return !!(window.SpeechRecognition||window.webkitSpeech
 function dualLine(){const scene=dualScene();if(!state.dual||!scene)return null;return scene.lines[state.dual.index]||null;}
 function dualName(id){const people=window.ReadFoxDialogueScripts?.characters||[];for(let i=0;i<people.length;i++)if(people[i].id===id)return people[i].name;return id||'';}
 function dualClearTimer(){if(dualTimer){clearTimeout(dualTimer);dualTimer=null;}}
+function dualClearSpeakTimer(){if(dualSpeakTimer){clearTimeout(dualSpeakTimer);dualSpeakTimer=null;}}
 function dualStopAudio(){
- dualToken++;dualListening=false;dualClearTimer();const rec=dualRec;dualRec=null;
+ dualToken++;dualListening=false;dualClearTimer();dualClearSpeakTimer();const rec=dualRec;dualRec=null;
  if(rec){rec.onresult=rec.onerror=rec.onend=null;try{rec.abort();}catch(_){ }if(rec.micId&&window.ReadFoxAudioLifecycle){window.ReadFoxAudioLifecycle.micEvent(rec.micId,'audio-ended');window.ReadFoxAudioLifecycle.endMic(rec.micId,{reason:'dual-stop'});}}
  try{dualSynth()?.cancel?.();}catch(_){ }
 }
@@ -435,8 +436,57 @@ function dualScrollCue(){
  const topLimit=(header&&header.getBoundingClientRect?header.getBoundingClientRect().bottom:0)+12;
  const bar=document.querySelector('.dual-preview-bar');
  const bottomLimit=(bar&&bar.getBoundingClientRect?bar.getBoundingClientRect().top:window.innerHeight)-12;
- if(rect.top<topLimit)window.scrollBy(0,rect.top-topLimit);
- else if(rect.bottom>bottomLimit)window.scrollBy(0,rect.bottom-bottomLimit);
+ try{
+  if(rect.top<topLimit)window.scrollBy(0,rect.top-topLimit);
+  else if(rect.bottom>bottomLimit)window.scrollBy(0,rect.bottom-bottomLimit);
+ }catch(_){}
+}
+function dualWarmVoices(){
+ const native=window.speechSynthesis;if(!native||dualVoicesHooked)return;dualVoicesHooked=true;
+ try{native.getVoices();}catch(_){}
+ try{native.addEventListener?.('voiceschanged',()=>{try{native.getVoices();}catch(_){}});}catch(_){}
+}
+function dualPreviewVoice(native,lang){
+ let voices=[];try{voices=native.getVoices?.()||[];}catch(_){return null;}
+ const russian=String(lang||'').toLowerCase().indexOf('ru')===0;let any=null;
+ for(let i=0;i<voices.length;i++){
+  const code=String(voices[i]&&voices[i].lang||'').toLowerCase();
+  if(russian){if(code.indexOf('ru')===0)return voices[i];}
+  else if(code==='en-us')return voices[i];
+  else if(!any&&code.indexOf('en')===0)any=voices[i];
+ }
+ return russian?null:any;
+}
+// The role-screen preview must call speechSynthesis.speak in the click itself.
+// dualSpeak waits on a promise and the dialogue player speaks through /speech, so iOS and Chrome stay silent.
+function dualPreviewSpeak(text,onend,rate,pitch,lang){
+ const token=++dualToken;dualClearSpeakTimer();
+ const value=String(text||'').trim();if(!value){if(onend)onend();return;}
+ const native=window.speechSynthesis;
+ if(!native||typeof native.speak!=='function'){dualSpeak(value,onend,rate,lang,pitch);return;}
+ const utterance=new SpeechSynthesisUtterance(value);
+ utterance.lang=lang||'en-US';utterance.rate=rate||dualRate();
+ const pitched=Number(pitch);if(pitched>=0.5&&pitched<=2)utterance.pitch=pitched;
+ try{const voice=dualPreviewVoice(native,utterance.lang);if(voice)utterance.voice=voice;}catch(_){}
+ let settled=false;
+ const finish=event=>{
+  if(settled||token!==dualToken)return;
+  const reason=event&&(event.error||'');
+  if(reason==='interrupted'||reason==='canceled'||reason==='cancelled')return;
+  settled=true;dualClearSpeakTimer();dualSpeaking=false;if(onend)onend();
+ };
+ utterance.onend=()=>finish();
+ utterance.onerror=event=>finish(event);
+ const words=value.split(/\s+/).filter(Boolean).length||1,speed=utterance.rate>0?utterance.rate:1;
+ dualSpeakTimer=setTimeout(()=>finish(),Math.min(20000,Math.max(3500,Math.round(words*700/speed)+1200)));
+ dualSpeaking=true;
+ const say=target=>{
+  try{native.resume?.();}catch(_){}
+  if(native.speaking||native.pending){try{native.cancel?.();}catch(_){}try{native.resume?.();}catch(_){}}
+  native.speak(target);
+  try{if(native.paused)native.resume?.();}catch(_){}
+ };
+ try{say(utterance);}catch(_){try{utterance.voice=null;utterance.pitch=1;say(utterance);}catch(_){finish();}}
 }
 function dualReadLine(){
  if(!state.dual||state.dual.phase!=='picker'||dualPreview!=='run')return;
@@ -444,22 +494,23 @@ function dualReadLine(){
  if(!line){dualPreview='';dualReadPlaying=false;dualSpoken=-1;state.dual.index=0;render();return;}
  const index=state.dual.index;
  dualReadPlaying=true;dualSpoken=index;render();dualScrollCue();
- dualSpeak(line.en,()=>{
+ dualPreviewSpeak(line.en,()=>{
   if(!state.dual||state.dual.phase!=='picker'||dualPreview!=='run'||state.dual.index!==index)return;
   state.dual.index+=1;
   if(!scene.lines[state.dual.index]){dualPreview='';dualReadPlaying=false;dualSpoken=-1;state.dual.index=0;save();render();return;}
   save();dualReadLine();
- },state.dual.slow?0.75:0.95,'en-US',dualPitch(line.speaker));
+ },state.dual.slow?0.75:0.95,dualPitch(line.speaker),'en-US');
 }
 function dualPreviewSay(index){
  const scene=dualScene(),line=scene&&scene.lines[index];
  if(!line||!state.dual||state.dual.phase!=='picker')return;
- dualPreview='line';dualReadPaused=true;dualReadPlaying=false;dualStopAudio();
- state.dual.index=index;dualSpoken=index;dualUnlock();render();dualScrollCue();
- dualSpeak(line.en,()=>{
+ dualWarmVoices();
+ dualPreview='line';dualReadPaused=true;dualReadPlaying=false;
+ state.dual.index=index;dualSpoken=index;render();dualScrollCue();
+ dualPreviewSpeak(line.en,()=>{
   if(dualPreview!=='line'||dualSpoken!==index)return;
   dualPreview='';dualSpoken=-1;render();
- },state.dual.slow?0.75:0.95,'en-US',dualPitch(line.speaker));
+ },state.dual.slow?0.75:0.95,dualPitch(line.speaker),'en-US');
 }
 function dualPreviewBar(){
  if(dualPreview==='line')return '<div class="dual-preview-bar"><button type="button" class="dual-secondary dual-stop" data-dual-action="preview-stop">Стоп</button></div>';
@@ -544,7 +595,7 @@ function dualClick(b){
   case 'coach-next':dualCoachNext();break;
   case 'coach-save':{const item=dualCoachWord(),line=dualLine();if(item&&line){const shown=dualSurface(line.en,item);bridge().openWord?.(b,shown,line.en,line.ru);}break;}
   case 'say-one':if(b.dataset.dualOne){dualUnlock();dualSpeak(b.dataset.dualOne,()=>{if(dualAuto&&!dualCoach&&state.dual&&state.dual.phase==='play')dualAutoKick();},0.7,'en-US');}break;
-  case 'preview':if(state.dual&&state.dual.phase==='picker'){dualUnlock();dualAuto=false;dualCoach=null;dualStopAudio();dualPreview='run';dualReadPaused=false;dualReadPlaying=true;state.dual.index=0;save();dualReadLine();}break;
+  case 'preview':if(state.dual&&state.dual.phase==='picker'){dualWarmVoices();dualAuto=false;dualCoach=null;dualPreview='run';dualReadPaused=false;dualReadPlaying=true;state.dual.index=0;save();dualReadLine();}break;
   case 'preview-toggle':if(state.dual&&state.dual.phase==='picker'&&dualPreview==='run'){dualPreview='pause';dualReadPaused=true;dualReadPlaying=false;dualSpoken=-1;dualStopAudio();render();dualScrollCue();}else if(state.dual&&state.dual.phase==='picker'&&dualPreview==='pause'){dualUnlock();dualPreview='run';dualReadPaused=false;dualReadLine();}break;
   case 'preview-stop':if(state.dual&&state.dual.phase==='picker'){dualPreview='';dualReadPaused=true;dualReadPlaying=false;dualSpoken=-1;state.dual.index=0;dualStopAudio();render();}break;
   case 'speak':dualListen();break;
