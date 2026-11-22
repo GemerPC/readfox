@@ -40,7 +40,8 @@ class FakeAudio {
   setAttribute() {}
   pause() { this.paused = true; }
   play() {
-    const call = { src: this.src, sync: duringClick, el: this };
+    const node = audioContexts[0] && audioContexts[0].gains && audioContexts[0].gains[0];
+    const call = { src: this.src, sync: duringClick, el: this, gain: node ? node.gain.value : null };
     plays.push(call);
     this.paused = false;
     if (plays.length > rejectAfter) return Promise.reject(Object.assign(new Error('not allowed'), { name: 'NotAllowedError' }));
@@ -69,7 +70,12 @@ const cloud = { cancels: [], suspends: 0, prepare() {}, resume() { this.resumes 
 const volumeHooks = [];
 const volumeSteps = { off: 0.35, loud: 0.7, max: 1.5 };
 let volumeBoost = 'loud';
-class GainNode { constructor() { this.gain = { value: 0 }; } connect() {} }
+class GainParam {
+  constructor() { this.value = 1; this.samples = []; }
+  setValueAtTime(value) { this.value = value; this.samples.push(value); }
+  cancelScheduledValues() {}
+}
+class GainNode { constructor() { this.gain = new GainParam(); } connect() {} }
 const audioContexts = [];
 class AudioCtx {
   constructor() { this.state = 'running'; this.destination = {}; audioContexts.push(this); }
@@ -165,7 +171,14 @@ test('preview unlocks audio in the click and plays each cloud voice in order', a
   assert.equal(plays[1].el, plays[0].el);
   assert.equal(audioContexts.length, 1);
   assert.equal(audioContexts[0].sourceEl, plays[0].el);
-  assert.ok(Math.abs(audioContexts[0].gains[0].gain.value - 0.7) < 0.001);
+  const firstGain = plays[1].gain;
+  assert.ok(Math.abs(firstGain - 0.7) < 0.001);
+  assert.equal(plays[1].el.volume, 1);
+  plays[1].el.onended();
+  await drain();
+  const second = plays[plays.length - 1];
+  assert.ok(Math.abs(second.gain - firstGain) < 0.001);
+  assert.equal(second.el.volume, 1);
   window.ReadFoxDialogueAudio.configure({ boost: 'off' });
   assert.ok(Math.abs(audioContexts[0].gains[0].gain.value - 0.35) < 0.001);
   window.ReadFoxDialogueAudio.configure({ boost: 'max' });
@@ -173,8 +186,6 @@ test('preview unlocks audio in the click and plays each cloud voice in order', a
   assert.equal(audioContexts.length, 1);
   window.ReadFoxDialogueAudio.configure({ boost: 'loud' });
   assert.match(content.innerHTML, /is-speaking/);
-  plays[1].el.onended();
-  await drain();
   const hailey = plays.filter(call => call !== plays[0] && call !== plays[1]);
   assert.ok(hailey.length >= 1);
   assert.equal(hailey[0].el, plays[0].el);

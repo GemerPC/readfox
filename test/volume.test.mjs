@@ -7,23 +7,19 @@ const storage = new Map();
 const gains = [];
 const limiters = [];
 class Gain {
-  constructor() { this.gain = { value: 0 }; gains.push(this); }
-  connect() {}
-}
-class Limiter {
   constructor() {
-    this.threshold = { value: 0 }; this.knee = { value: 0 }; this.ratio = { value: 0 };
-    this.attack = { value: 0 }; this.release = { value: 0 };
-    limiters.push(this);
+    this.gain = { value: 1, setValueAtTime(v) { this.value = v; this.samples = (this.samples || []).concat(v); }, cancelScheduledValues() {} };
+    gains.push(this);
   }
   connect() {}
 }
 class Ctx {
-  constructor() { this.state = 'running'; this.destination = {}; this.currentTime = 0; }
+  constructor() { this.state = 'running'; this.destination = {}; this.currentTime = 0; this.compressors = 0; }
   resume() { this.state = 'running'; return Promise.resolve(); }
   createGain() { return new Gain(); }
-  createDynamicsCompressor() { return new Limiter(); }
+  createDynamicsCompressor() { this.compressors += 1; throw new Error('compressor ducks later words'); }
   createBuffer() { return { duration: 0.01, length: 1, numberOfChannels: 1 }; }
+  createBufferSource() { return { connect() {}, start() {} }; }
   close() { this.state = 'closed'; return Promise.resolve(); }
 }
 const spoken = [];
@@ -53,7 +49,7 @@ test('the three volume steps are different, saved, and applied to playing audio'
   synth.prepare();
   const playing = gains[gains.length - 1];
   assert.ok(Math.abs(playing.gain.value - 0.35) < 0.001);
-  assert.equal(limiters[0].threshold.value, -1);
+  assert.equal(playing.gain.samples[0], playing.gain.samples[playing.gain.samples.length - 1]);
   audio.configure({ boost: 'max' });
   assert.ok(Math.abs(playing.gain.value - 1.5) < 0.001);
   audio.configure({ boost: 'loud' });

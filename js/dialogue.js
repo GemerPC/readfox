@@ -453,11 +453,19 @@ function dualLevel(){
  const audio=window.ReadFoxDialogueAudio,value=audio&&typeof audio.gain==='function'?Number(audio.gain()):0.7;
  return value>0?value:0.7;
 }
-function dualApplyVolume(){
- const value=dualLevel();
- if(dualGain&&dualGain.gain)dualGain.gain.value=value;
- if(dualEl&&!dualRouted){try{dualEl.volume=Math.min(1,value);}catch(_){}}
+function dualSetGain(){
+ const value=dualLevel(),ctx=dualAudioCtx;
+ if(dualGain&&dualGain.gain){
+  const now=ctx&&isFinite(ctx.currentTime)?ctx.currentTime:0;
+  try{if(dualGain.gain.cancelScheduledValues)dualGain.gain.cancelScheduledValues(now);}catch(_){}
+  try{
+   if(dualGain.gain.setValueAtTime)dualGain.gain.setValueAtTime(value,now);
+   else dualGain.gain.value=value;
+  }catch(_){dualGain.gain.value=value;}
+ }
+ if(dualEl){try{dualEl.volume=dualRouted?1:Math.min(1,value);}catch(_){}}
 }
+function dualApplyVolume(){dualSetGain();}
 function dualEnsureOutput(){
  if(dualEl)return dualEl;
  const Ctor=window.Audio;if(typeof Ctor!=='function')return null;
@@ -474,12 +482,12 @@ function dualRouteOutput(){
   if(!dualAudioCtx||dualAudioCtx.state==='closed')dualAudioCtx=new Ctx();
   if(dualAudioCtx.state==='suspended'&&dualAudioCtx.resume)dualAudioCtx.resume();
   dualGain=dualAudioCtx.createGain();
-  dualGain.gain.value=dualLevel();
+  dualSetGain();
   const source=dualAudioCtx.createMediaElementSource(dualEl);
   source.connect(dualGain);dualGain.connect(dualAudioCtx.destination);
   dualRouted=true;
-  try{dualEl.volume=1;}catch(_){}
- }catch(_){dualRouted=false;dualGain=null;dualApplyVolume();}
+  dualSetGain();
+ }catch(_){dualRouted=false;dualGain=null;dualSetGain();}
 }
 function dualUnlockOutput(){
  const el=dualEnsureOutput();if(!el)return;
@@ -557,19 +565,26 @@ function dualSystemSpeak(text,speaker,rate,onend,onblock){
 }
 function dualPlayUrl(url,rate,still,onend,onfail,onstart){
  const el=dualEnsureOutput();if(!el){onfail('missing');return;}
- el.onended=el.onerror=null;
- try{el.pause();}catch(_){}
- try{el.src=url;el.playbackRate=rate||1;}catch(_){}
- let pending;
- try{pending=el.play();}catch(error){onfail(error&&error.name==='NotAllowedError'?'blocked':'media');return;}
- const arm=()=>{
+ const start=()=>{
   if(!still())return;
-  if(onstart)onstart();
-  el.onended=()=>{el.onended=el.onerror=null;onend();};
-  el.onerror=()=>{el.onended=el.onerror=null;onfail('media');};
+  dualSetGain();
+  el.onended=el.onerror=null;
+  try{el.pause();}catch(_){}
+  try{el.src=url;el.playbackRate=rate||1;}catch(_){}
+  let pending;
+  try{pending=el.play();}catch(error){onfail(error&&error.name==='NotAllowedError'?'blocked':'media');return;}
+  const arm=()=>{
+   if(!still())return;
+   dualSetGain();
+   if(onstart)onstart();
+   el.onended=()=>{el.onended=el.onerror=null;onend();};
+   el.onerror=()=>{el.onended=el.onerror=null;onfail('media');};
+  };
+  if(pending&&typeof pending.then==='function')pending.then(()=>arm()).catch(error=>{if(!still())return;onfail(error&&error.name==='NotAllowedError'?'blocked':'media');});
+  else arm();
  };
- if(pending&&typeof pending.then==='function')pending.then(()=>arm()).catch(error=>{if(!still())return;onfail(error&&error.name==='NotAllowedError'?'blocked':'media');});
- else arm();
+ if(dualAudioCtx&&dualAudioCtx.state==='suspended'&&dualAudioCtx.resume)Promise.resolve(dualAudioCtx.resume()).then(start,start);
+ else start();
 }
 function dualPlayCloud(text,speaker,onend,onblock){
  const token=++dualToken;dualClearSpeakTimer();

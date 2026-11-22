@@ -133,10 +133,9 @@ function createSynthesizer() {
   const current = j => job === j && !j.cancelled && j.id === serial && !document.hidden;
   const wantsGraph = () => Boolean(AudioContextClass);
   function applyLevel() {
-    const value = level();
-    if (gain) gain.gain.value = value;
+    setGain(gain, context);
     // The silent keep-alive stays quiet. A real clip follows the selected level.
-    if (media && mediaUrl) { try { media.volume = Math.min(1, value); } catch (_) { /* iOS ignores element volume. */ } }
+    if (media && mediaUrl) { try { media.volume = Math.min(1, level()); } catch (_) { /* iOS ignores element volume. */ } }
   }
   onChange(applyLevel);
 
@@ -146,15 +145,49 @@ function createSynthesizer() {
     if (!context || context.state === 'closed') {
       context = new AudioContextClass();
       gain = context.createGain();
-      limiter = context.createDynamicsCompressor();
-      // Only the maximum step (above unity) should meet the limiter. 0.35 and 0.7 stay linear.
-      limiter.threshold.value = -1; limiter.knee.value = 0; limiter.ratio.value = 12;
-      limiter.attack.value = 0.003; limiter.release.value = 0.05;
-      gain.connect(limiter); limiter.connect(context.destination);
+      // A compressor's attack leaves the first word loud and ducks the rest. A fixed curve
+      // treats every sample the same: 0.35 and 0.7 pass through, and only peaks above 1 are softened.
+      const shaper = context.createWaveShaper ? context.createWaveShaper() : null;
+      if (shaper) {
+        const n = 1024, curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+          const x = (i / (n - 1)) * 2 - 1, a = x < 0 ? -x : x, s = x < 0 ? -1 : 1;
+          curve[i] = s * (a <= 1 ? a : 1 + 0.15 * (1 - Math.exp(-(a - 1) * 3)));
+        }
+        shaper.curve = curve;
+        gain.connect(shaper); shaper.connect(context.destination);
+      } else gain.connect(context.destination);
       micGeneration = life?.micGeneration?.() ?? 0;
     }
-    gain.gain.value = level();
+    setGain(gain, context);
     return context;
+  }
+  function setGain(node, ctx) {
+    if (!node || !node.gain) return;
+    const value = level(), now = ctx && Number.isFinite(ctx.currentTime) ? ctx.currentTime : 0;
+    try { node.gain.cancelScheduledValues?.(now); } catch (_) {}
+    try {
+      if (node.gain.setValueAtTime) node.gain.setValueAtTime(value, now);
+      else node.gain.value = value;
+    } catch (_) { node.gain.value = value; }
+  }
+  function normalizeBuffer(buffer) {
+    if (!buffer || buffer._readfoxNorm || !buffer.getChannelData || !buffer.numberOfChannels) return buffer;
+    let peak = 0;
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const data = buffer.getChannelData(c);
+      for (let i = 0; i < data.length; i++) { const a = data[i] < 0 ? -data[i] : data[i]; if (a > peak) peak = a; }
+    }
+    const target = 0.9;
+    if (peak > 0.02 && Math.abs(peak - target) / target > 0.08) {
+      const scale = target / peak;
+      for (let c = 0; c < buffer.numberOfChannels; c++) {
+        const data = buffer.getChannelData(c);
+        for (let i = 0; i < data.length; i++) data[i] *= scale;
+      }
+    }
+    buffer._readfoxNorm = true;
+    return buffer;
   }
 
   /* ── <audio> element: plain playback, silent keep-alive, and unlock ── */
@@ -196,7 +229,7 @@ function createSynthesizer() {
         const ctx = graph(reset || stale);
         tasks.push(bounded(Promise.resolve(ctx.resume()), 6000, 'Нажми «Повторить звук», чтобы разрешить воспроизведение.').then(() => {
           // A one-sample buffer completes the iOS unlock.
-          const source = ctx.createBufferSource(); source.buffer = ctx.createBuffer(1, 1, 22050); source.connect(ctx.destination);
+          const source = ctx.createBufferSource(); source.buffer = ctx.createBuffer(1, 1, 22050); source.connect(gain || ctx.destination);
           try { source.start(0); } catch (_) {}
           if (ctx.state !== 'running') throw Error('Браузер приостановил звук. Нажми «Повторить звук».');
         }).catch(error => { if (version === prepareVersion) graphFailure = error; }));
@@ -337,12 +370,14 @@ function createSynthesizer() {
     if (!current(j)) return false;
     const buffer = entry.buffer;
     if (!Number.isFinite(buffer.duration) || buffer.duration <= 0 || buffer.duration > 120 || buffer.length * buffer.numberOfChannels > 6000000) throw Error('Сервис вернул слишком длинное аудио.');
+    normalizeBuffer(buffer);
     await bounded(Promise.resolve(ctx.resume()), 6000, 'Нажми «Повторить звук», чтобы включить динамик.');
     if (!current(j)) return false;
     if (ctx.state !== 'running') return false;
     const source = ctx.createBufferSource();
     j.source = source; source.buffer = buffer; source.playbackRate.value = j.rate;
     source.connect(gain);
+    setGain(gain, ctx);
     source.onended = () => { if (current(j)) void finish(j); };
     // After a microphone session iOS needs a moment on the new route; a late start keeps the first syllable intact.
     const afterMic = IOS && (life?.micGeneration?.() ?? 0) > 0;
