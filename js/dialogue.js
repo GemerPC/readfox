@@ -44,7 +44,7 @@ function sayPhrase(id){
  const control=voiceState.supported?getVoice():null;
  if(control?.say){control.say(value);return;}
  // Without speech recognition there is no voice controller, so the phrase goes straight to the dialogue voice.
- try{phraseSynth=phraseSynth||window.ReadFoxDialogueAudio?.createSynthesizer()||window.speechSynthesis;phraseSynth.cancel?.();const u=new SpeechSynthesisUtterance(value);u.lang='en-US';u.rate=.9;u.onend=u.onerror=()=>{sayingId=0;document.querySelectorAll('.dlg-say.is-saying').forEach(b=>b.classList.remove('is-saying'));};phraseSynth.speak(u);}
+ try{phraseSynth=phraseSynth||window.ReadFoxDialogueAudio?.createSynthesizer()||window.speechSynthesis;const clean=window.ReadFoxDialogueAudio?.speechText?.(value)||value;const u=new SpeechSynthesisUtterance(clean);u.lang='en-US';u.rate=1;u.volume=1;u.onend=u.onerror=()=>{sayingId=0;document.querySelectorAll('.dlg-say.is-saying').forEach(b=>b.classList.remove('is-saying'));};phraseSynth.speak(u);}
  catch{sayingId=0;bridge().toast?.('Озвучка недоступна в этом браузере.');}
 }
 function recoverVoiceSound(){
@@ -255,7 +255,7 @@ const COACH_INTRO='Почти! Вот это слово немного не по
 const COACH_PRAISE='Отлично, теперь похоже!';
 function dualScene(){return window.ReadFoxDialogueScripts?.script(state.dual?.topic||state.selectedTopic)||null;}
 function dualSynth(){if(!dualSynthInstance)dualSynthInstance=window.ReadFoxDialogueAudio?.createSynthesizer()||window.speechSynthesis;return dualSynthInstance;}
-function dualRate(){return state.dual?.slow?0.75:0.95;}
+function dualRate(){return state.dual?.slow?0.75:1;}
 function dualUnlock(){const synth=dualSynth();if(synth&&synth.prepare)synth.prepare();}
 function dualCanListen(){return !!(window.SpeechRecognition||window.webkitSpeechRecognition)&&window.isSecureContext!==false;}
 function dualLine(){const scene=dualScene();if(!state.dual||!scene)return null;return scene.lines[state.dual.index]||null;}
@@ -525,10 +525,15 @@ function dualHaltOutput(){
  el.onended=el.onerror=null;
  if(el.src&&el.src!==dualSilent){try{el.pause();}catch(_){}}
 }
+function dualSpokenText(text){
+ const api=window.ReadFoxDialogueAudio;
+ return api&&api.speechText?api.speechText(text):String(text||'').replace(/\s+/g,' ').trim();
+}
 function dualFetchLine(text,speaker){
- const voice=dualVoiceName(speaker),key=voice+'\n'+text,hit=dualClips.get(key);if(hit)return hit;
+ const spoken=dualSpokenText(text);
+ const voice=dualVoiceName(speaker),key=voice+'\n'+spoken,hit=dualClips.get(key);if(hit)return hit;
  const endpoint=(window.READFOX_CONFIG&&window.READFOX_CONFIG.speechEndpoint)||'https://readfox.gemerpc.workers.dev/speech';
- const job=fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,voice:voice})}).then(response=>{
+ const job=fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:spoken,voice:voice})}).then(response=>{
   const type=response.headers.get('Content-Type')||'';
   if(!response.ok||type.indexOf('audio/')!==0)throw new Error('speech');
   return response.arrayBuffer();
@@ -564,7 +569,7 @@ function dualSystemSpeak(text,speaker,rate,onend,onblock){
  const native=window.speechSynthesis;
  if(!native||typeof native.speak!=='function'){if(onblock)onblock();return;}
  const utterance=new SpeechSynthesisUtterance(text);
- utterance.lang='en-US';utterance.rate=rate||0.95;
+ utterance.lang='en-US';utterance.rate=rate||1;
  try{utterance.volume=1;}catch(_){}
  try{const pair=dualNamedVoices();const chosen=speaker==='hailey'?pair.hailey:pair.tommy;if(chosen)utterance.voice=chosen;}catch(_){}
  utterance.onend=()=>{if(onend)onend();};
@@ -582,14 +587,14 @@ function dualPlayUrl(url,rate,still,onend,onfail,onstart){
   if(!still())return;
   dualSetGain();
   el.onended=el.onerror=null;
-  try{el.pause();}catch(_){}
-  try{el.src=url;el.playbackRate=rate||1;}catch(_){}
+  if(!el.paused){try{el.pause();}catch(_){}}
+  try{el.src=url;el.playbackRate=1;el.defaultPlaybackRate=1;if('preservesPitch'in el)el.preservesPitch=true;}catch(_){}
   let pending;
   try{pending=el.play();}catch(error){onfail(error&&error.name==='NotAllowedError'?'blocked':'media');return;}
   const arm=()=>{
    if(!still())return;
    dualSetGain();
-   if(onstart)onstart();
+   if(onstart)onstart(el);
    el.onended=()=>{el.onended=el.onerror=null;onend();};
    el.onerror=()=>{el.onended=el.onerror=null;onfail('media');};
   };
@@ -604,7 +609,7 @@ function dualPlayCloud(text,speaker,onend,onblock){
  const value=String(text||'').trim();if(!value){if(onend)onend();return;}
  const loading=dualFetchLine(value,speaker);
  dualPrefetchNext();
- const rate=state.dual&&state.dual.slow?0.75:0.95;
+ const rate=1;
  let settled=false;
  const finish=blocked=>{
   if(settled||token!==dualToken)return;
@@ -613,14 +618,18 @@ function dualPlayCloud(text,speaker,onend,onblock){
   if(onend)onend();
  };
  const words=value.split(/\s+/).filter(Boolean).length||1;
- const armTimer=()=>{dualClearSpeakTimer();dualSpeakTimer=setTimeout(()=>finish(false),Math.min(20000,Math.max(4000,Math.round(words*700/rate)+1200)));};
+ const armTimer=el=>{
+  const duration=el&&Number.isFinite(el.duration)&&el.duration>0?el.duration*1000+3000:words*900+8000;
+  dualClearSpeakTimer();
+  dualSpeakTimer=setTimeout(()=>finish(false),Math.min(90000,Math.max(8000,duration)));
+ };
  dualSpeaking=true;
  const system=()=>{if(token!==dualToken)return;armTimer();dualSystemSpeak(value,speaker,rate,()=>finish(false),()=>finish(true));};
  loading.then(url=>{
   if(token!==dualToken)return;
   dualWhenQuiet(()=>{
    if(token!==dualToken||dualMicOpen())return;
-   dualPlayUrl(url,rate,()=>token===dualToken&&!dualMicOpen(),()=>finish(false),reason=>reason==='blocked'?finish(true):system(),armTimer);
+   dualPlayUrl(url,1,()=>token===dualToken&&!dualMicOpen(),()=>finish(false),reason=>reason==='blocked'?finish(true):system(),armTimer);
   });
  }).catch(()=>{if(token===dualToken)dualWhenQuiet(()=>{if(token===dualToken&&!dualMicOpen())system();});});
 }

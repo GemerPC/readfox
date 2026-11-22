@@ -169,6 +169,7 @@ test('preview unlocks audio in the click and plays each cloud voice in order', a
   await drain();
   assert.ok(plays.length >= 2);
   assert.equal(plays[1].el, plays[0].el);
+  assert.equal(plays[1].el.playbackRate, 1);
   assert.equal(audioContexts.length, 1);
   assert.equal(audioContexts[0].sourceEl, plays[0].el);
   const firstGain = plays[1].gain;

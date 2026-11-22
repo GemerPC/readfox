@@ -332,10 +332,11 @@
       quietThen(epoch, function () {
         route('playback');
         resetOutput = false;
+        const clean = window.ReadFoxDialogueAudio&&window.ReadFoxDialogueAudio.speechText?window.ReadFoxDialogueAudio.speechText(value):value;
         let spoken;
-        try { spoken = new window.SpeechSynthesisUtterance(value); }
+        try { spoken = new window.SpeechSynthesisUtterance(clean); }
         catch (_) { pause('Озвучка недоступна. Можно прочитать ответ и продолжить с клавиатуры.'); return; }
-        spoken.lang = 'en-US'; spoken.rate = 0.9; spoken.pitch = 1;
+        spoken.lang = 'en-US'; spoken.rate = synthesis.engine==='audio'?1:0.9; spoken.pitch = 1;
         spoken.volume = 1;
         try {
           const voices = synthesis.getVoices();
