@@ -24,7 +24,19 @@ function waitForMicrophones(){
  if(!captures.size)return settleUntil>Date.now()?afterRelease():null;
  let timer;return Promise.race([Promise.all([...captures.values()].map(c=>c.done)).then(afterRelease),new Promise(resolve=>{timer=setTimeout(()=>{log('[MIC_RELEASE_TIMEOUT]');resolve(false);},3500);})]).finally(()=>clearTimeout(timer));
 }
-window.ReadFoxAudioLifecycle=Object.freeze({isIOS,log,beginMic,micEvent,endMic,waitForMicrophones,snapshot,history:()=>history.slice(),micGeneration:()=>micCount,registerOutput:(name,fn)=>providers.set(name,fn),
+function audioSession(){try{return (window.navigator&&window.navigator.audioSession)||null;}catch(_){return null;}}
+function setAudioSession(type){
+ const session=audioSession();
+ if(!session||(type!=='playback'&&type!=='play-and-record'&&type!=='auto'))return false;
+ try{session.type=type;return true;}catch(_){return false;}
+}
+function canPlay(){return captures.size===0;}
+const streams=new Set();
+function releaseStreams(){
+ streams.forEach(stream=>{try{(stream.getTracks?stream.getTracks():[]).forEach(track=>track.stop());}catch(_){}});
+ streams.clear();
+}
+window.ReadFoxAudioLifecycle=Object.freeze({isIOS,log,beginMic,micEvent,endMic,waitForMicrophones,setAudioSession,canPlay,releaseStreams,snapshot,history:()=>history.slice(),micGeneration:()=>micCount,registerOutput:(name,fn)=>providers.set(name,fn),
  diagnostics:value=>{enabled=Boolean(value);},
  settleMs:()=>isIOS?settle:0,
  setSafariDelay:ms=>{if(![100,300,500,1000].includes(ms))throw new Error('Use 100, 300, 500 or 1000 ms');settle=ms;log('[SAFARI_DELAY]',{milliseconds:ms});return ms;}

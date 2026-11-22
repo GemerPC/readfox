@@ -15,32 +15,24 @@
 'use strict';
 const STORAGE = 'readfox.dialogue.audio.v1';
 const CACHE_PREFIX = 'readfox-tts-';
-// Ordinary / louder / maximum. The top step is above 1 so a phone already at full
-// volume can still get louder; a gentle limiter only catches that peak.
-const BOOST = Object.freeze({ off: 0.35, loud: 0.7, max: 1.5 });
 const life = window.ReadFoxAudioLifecycle;
 const IOS = !!life?.isIOS;
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const supported = Boolean(AudioContextClass) || typeof window.Audio === 'function';
-const has = key => Object.prototype.hasOwnProperty.call(BOOST, key);
-const settings = { engine: supported ? 'audio' : 'system', boost: IOS ? 'loud' : 'off' };
+const settings = { engine: supported ? 'audio' : 'system' };
 try {
   const saved = JSON.parse(localStorage.getItem(STORAGE) || 'null');
-  if (saved) {
-    if (['audio', 'system'].includes(saved.engine)) settings.engine = supported ? saved.engine : 'system';
-    if (has(saved.boost)) settings.boost = saved.boost;
-  }
+  if (saved && ['audio', 'system'].includes(saved.engine)) settings.engine = supported ? saved.engine : 'system';
   localStorage.setItem(STORAGE, JSON.stringify(settings));
 } catch (_) { /* Storage may be unavailable in private mode. */ }
 const log = (event, detail) => life?.log(event, detail);
 const levelListeners = new Set();
-function level() { return BOOST[settings.boost] ?? BOOST.loud; }
+function level() { return 1; }
 function configure(patch = {}) {
   if (['audio', 'system'].includes(patch.engine)) settings.engine = supported ? patch.engine : 'system';
-  if (has(patch.boost)) settings.boost = patch.boost;
   try { localStorage.setItem(STORAGE, JSON.stringify(settings)); } catch (_) { /* Optional. */ }
   levelListeners.forEach(fn => { try { fn(); } catch (_) { /* A listener must not block the others. */ } });
-  return { ...settings, gain: level() };
+  return { ...settings, gain: 1 };
 }
 function onChange(fn) { if (typeof fn === 'function') levelListeners.add(fn); }
 
@@ -145,18 +137,7 @@ function createSynthesizer() {
     if (!context || context.state === 'closed') {
       context = new AudioContextClass();
       gain = context.createGain();
-      // A compressor's attack leaves the first word loud and ducks the rest. A fixed curve
-      // treats every sample the same: 0.35 and 0.7 pass through, and only peaks above 1 are softened.
-      const shaper = context.createWaveShaper ? context.createWaveShaper() : null;
-      if (shaper) {
-        const n = 1024, curve = new Float32Array(n);
-        for (let i = 0; i < n; i++) {
-          const x = (i / (n - 1)) * 2 - 1, a = x < 0 ? -x : x, s = x < 0 ? -1 : 1;
-          curve[i] = s * (a <= 1 ? a : 1 + 0.15 * (1 - Math.exp(-(a - 1) * 3)));
-        }
-        shaper.curve = curve;
-        gain.connect(shaper); shaper.connect(context.destination);
-      } else gain.connect(context.destination);
+      gain.connect(context.destination);
       micGeneration = life?.micGeneration?.() ?? 0;
     }
     setGain(gain, context);
@@ -178,9 +159,9 @@ function createSynthesizer() {
       const data = buffer.getChannelData(c);
       for (let i = 0; i < data.length; i++) { const a = data[i] < 0 ? -data[i] : data[i]; if (a > peak) peak = a; }
     }
-    const target = 0.9;
-    if (peak > 0.02 && Math.abs(peak - target) / target > 0.08) {
-      const scale = target / peak;
+    const target = 0.95;
+    const scale = peak > 1 ? target / peak : (peak > 0.02 && peak < target ? target / peak : 0);
+    if (scale) {
       for (let c = 0; c < buffer.numberOfChannels; c++) {
         const data = buffer.getChannelData(c);
         for (let i = 0; i < data.length; i++) data[i] *= scale;
@@ -248,12 +229,6 @@ function createSynthesizer() {
     } catch (error) { if (version === prepareVersion) graphFailure = error; preparing = Promise.resolve(); }
   }
 
-  async function suspendOutput() {
-    const ctx = context;
-    if (!ctx || ctx.state !== 'running') return;
-    await bounded(Promise.resolve(ctx.suspend()), 3000, 'Браузер ещё завершает звук.');
-    log('[AUDIO_CONTEXT_RELEASED]', { state: ctx.state });
-  }
   function detachSource(j) {
     if (j.source) { j.source.onended = null; try { j.source.stop(); } catch (_) {} try { j.source.disconnect(); } catch (_) {} j.source = null; }
   }
@@ -262,8 +237,7 @@ function createSynthesizer() {
     if (!keepPreparation) { prepareVersion++; preparing = Promise.resolve(); graphFailure = elementFailure = null; priming = false; }
     if (old) { old.cancelled = true; old.abort.abort(); clearTimeout(old.timer); detachSource(old); log('[TTS_PLAYBACK_END]', { cancelled: true }); }
     if (!priming) clearElement();
-    if (!keepPreparation) void suspendOutput().catch(() => {});
-    try { native?.cancel(); } catch (_) {}
+    try { if (native && (native.speaking || native.pending)) native.cancel(); } catch (_) {}
     if (old) setTimeout(() => old.utterance.onend?.({ type: 'end', cancelled: true }), 60);
   }
 
@@ -327,7 +301,6 @@ function createSynthesizer() {
   async function finish(j) {
     if (!current(j)) return;
     clearTimeout(j.timer); detachSource(j); clearElement();
-    try { await suspendOutput(); } catch (error) { if (current(j)) fail(j, error); return; }
     if (!current(j)) return;
     job = null;
     log('[TTS_PLAYBACK_END]', { cancelled: false });
@@ -335,7 +308,7 @@ function createSynthesizer() {
   }
   function fail(j, error) {
     if (!current(j)) return;
-    job = null; j.cancelled = true; j.abort.abort(); clearTimeout(j.timer); detachSource(j); clearElement(); void suspendOutput().catch(() => {});
+    job = null; j.cancelled = true; j.abort.abort(); clearTimeout(j.timer); detachSource(j); clearElement();
     log('[TTS_PLAYBACK_END]', { failed: true, errorName: error?.name || 'Error' });
     j.utterance.onerror?.({ error: 'audio-playback', message: error?.message || 'Не удалось озвучить ответ.' });
   }
@@ -410,7 +383,7 @@ function createSynthesizer() {
   function speak(utterance) {
     if (settings.engine === 'system') {
       lastPlayback = { origin: 'system', voice: '', fallback: '' };
-      try { utterance.volume = Math.min(1, level()); } catch (_) { /* Some stubs omit volume. */ }
+      try { utterance.volume = 1; } catch (_) { /* Some stubs omit volume. */ }
       native.speak(utterance); return;
     }
     cancel(true);
@@ -434,7 +407,7 @@ function createSynthesizer() {
     get pending() { return !!(job && !job.playing) || priming || !!native?.pending; },
     get engine() { return settings.engine; },
     speak, cancel, prepare, preload,
-    beforeCapture: async () => { await suspendOutput(); clearElement(); await window.ReadFoxSound?.release?.(); },
+    beforeCapture: async () => { cancel(true); clearElement(); try { life?.setAudioSession?.('play-and-record'); } catch (_) {} await window.ReadFoxSound?.release?.(); },
     resume() {
       if (settings.engine === 'system') native?.resume();
       else if (context && context.state === 'suspended') void context.resume().catch(() => {});
@@ -442,5 +415,5 @@ function createSynthesizer() {
     getVoices() { return settings.engine === 'system' ? (native?.getVoices() || []) : []; }
   };
 }
-window.ReadFoxDialogueAudio = Object.freeze({ supported, settings: () => ({ ...settings, gain: level() }), gain: level, configure, onChange, createSynthesizer, lastPlayback: () => lastPlayback && { ...lastPlayback }, boostLevels: Object.freeze(Object.keys(BOOST)) });
+window.ReadFoxDialogueAudio = Object.freeze({ supported, settings: () => ({ ...settings, gain: 1 }), gain: level, configure, onChange, createSynthesizer, lastPlayback: () => lastPlayback && { ...lastPlayback } });
 })();

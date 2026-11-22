@@ -2501,11 +2501,13 @@ function speak(text){
   stopWordAudio();
   try{
     if(!text || !("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
+    try { window.ReadFoxAudioLifecycle?.setAudioSession?.('playback'); } catch (_) {}
+    if (window.speechSynthesis.speaking || window.speechSynthesis.pending) window.speechSynthesis.cancel();
     resetReadAloudButton();
     const u = new SpeechSynthesisUtterance(text);
     applyVoice(u);
     u.rate = 0.92;
+    u.volume = 1;
     window.speechSynthesis.speak(u);
   }catch(e){ /* синтез речи недоступен в этом браузере — молча пропускаем */ }
 }
@@ -2730,18 +2732,6 @@ function closeSettingsPanel(){
   document.getElementById("voiceSettingsBtn")?.setAttribute("aria-expanded", "false");
 }
 
-function boostMarkup(){
-  const audio = window.ReadFoxDialogueAudio;
-  if(!audio || !audio.supported) return "";
-  const current = audio.settings().boost;
-  const option = (value, label)=>`<option value="${value}" ${current===value ? "selected":""}>${label}</option>`;
-  return `<div class="settings-section">
-      <label class="settings-section-title" for="boostSelect">Громкость голоса Фокса</label>
-      <select id="boostSelect">${option("off","Обычная")}${option("loud","Громче")}${option("max","Максимум")}</select>
-      <div class="hint">Для «Говорения» и «Диалога». Если на iPhone звук стал тихим после микрофона, выбери «Максимум».</div>
-    </div>`;
-}
-
 function toggleVoicePanel(){
   const existing = document.getElementById("voicePanel");
   if(existing){ closeSettingsPanel(); return; }
@@ -2787,7 +2777,6 @@ function toggleVoicePanel(){
       <label class="settings-section-title" for="voiceSelect">Голос для озвучки</label>
     ${en.length ? `<select id="voiceSelect">${optionsHtml}</select>` : `<div class="hint">Браузер пока не отдал список голосов — некоторые browsers (например, мобильный Safari) подгружают их только после первого звука. Нажмите «Проверить».</div>`}
     </div>
-    ${boostMarkup()}
     <div class="actions">
       <button class="primary" id="voiceTestBtn">▶ Проверить</button>
       <button id="voiceCloseBtn">Закрыть</button>
@@ -2812,9 +2801,6 @@ function toggleVoicePanel(){
     state.settings.fontSize = Number(event.target.value);
     applyFontSize();
     saveState();
-  });
-  document.getElementById("boostSelect")?.addEventListener("change", (event)=>{
-    window.ReadFoxDialogueAudio?.configure({ boost: event.target.value });
   });
   const select = document.getElementById("voiceSelect");
   if(select){

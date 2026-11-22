@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const storage = new Map();
+storage.set('readfox.dialogue.audio.v1', JSON.stringify({ engine: 'audio', boost: 'max' }));
 const gains = [];
 const limiters = [];
 class Gain {
@@ -36,29 +37,20 @@ sandbox.globalThis = sandbox;
 runInContext(readFileSync(new URL('../js/dialogue-audio.js', import.meta.url), 'utf8'), createContext(sandbox));
 const audio = window.ReadFoxDialogueAudio;
 
-test('the three volume steps are different, saved, and applied to playing audio', () => {
-  assert.ok(Math.abs(audio.gain() - 0.35) < 0.001);
-  assert.ok(Math.abs(audio.configure({ boost: 'loud' }).gain - 0.7) < 0.001);
-  assert.ok(Math.abs(audio.configure({ boost: 'max' }).gain - 1.5) < 0.001);
-  assert.ok(audio.gain() > 1);
-  assert.ok(audio.gain() / audio.configure({ boost: 'loud' }).gain > 1.8);
-  assert.ok(audio.configure({ boost: 'loud' }).gain / audio.configure({ boost: 'off' }).gain > 1.8);
-  assert.equal(JSON.parse(storage.get('readfox.dialogue.audio.v1')).boost, 'off');
-
+test('playback stays at full volume and ignores the old volume steps', () => {
+  const saved = JSON.parse(storage.get('readfox.dialogue.audio.v1'));
+  assert.equal(saved.boost, undefined);
+  assert.equal(audio.gain(), 1);
+  assert.equal(audio.configure({ boost: 'off' }).gain, 1);
+  assert.equal(audio.configure({ boost: 'max' }).gain, 1);
   const synth = audio.createSynthesizer();
   synth.prepare();
   const playing = gains[gains.length - 1];
-  assert.ok(Math.abs(playing.gain.value - 0.35) < 0.001);
-  assert.equal(playing.gain.samples[0], playing.gain.samples[playing.gain.samples.length - 1]);
-  audio.configure({ boost: 'max' });
-  assert.ok(Math.abs(playing.gain.value - 1.5) < 0.001);
-  audio.configure({ boost: 'loud' });
-  assert.ok(Math.abs(playing.gain.value - 0.7) < 0.001);
-
-  audio.configure({ engine: 'system', boost: 'off' });
+  assert.equal(playing.gain.value, 1);
+  assert.equal(playing.gain.samples.every(value => value === 1), true);
+  audio.configure({ engine: 'system' });
   synth.speak({ text: 'Hello there' });
-  assert.ok(Math.abs(spoken[0].volume - 0.35) < 0.001);
-  audio.configure({ boost: 'max' });
   synth.speak({ text: 'Hello again' });
-  assert.ok(Math.abs(spoken[1].volume - 1) < 0.001);
+  assert.equal(spoken[0].volume, 1);
+  assert.equal(spoken[1].volume, 1);
 });
