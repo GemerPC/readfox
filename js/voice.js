@@ -600,6 +600,7 @@
     requestTimer = setTimeout(() => {
       if (id === recognitionEpoch) reportError('Микрофон не включился. Проверь разрешение браузера и начни снова.');
     }, 14000);
+    try { life?.setAudioSession?.('play-and-record'); } catch (_) {}
     try { recognizer.start(); } catch (_) {
       recognition = null;
       recognizer.onstart = recognizer.onresult = recognizer.onerror = recognizer.onend = recognizer.onnomatch = null;
@@ -642,6 +643,7 @@
     if (!ended) { reportError('Микрофон ещё выключается. Прослушивание начнётся только после его остановки — попробуй ещё раз.'); return; }
     // On iOS the audio route settles shortly after the microphone is released.
     if (life) { await life.waitForMicrophones(); if (id !== speechToken || !state.playing || !viewActive || document.hidden) return; }
+    try { life.setAudioSession?.('playback'); } catch (_) {}
     const cloud = Boolean(synth && synth.engine === 'audio');
     const done = () => {
       if (id !== speechToken) return;
@@ -663,6 +665,7 @@
       const fallback = new window.SpeechSynthesisUtterance(text);
       fallback.lang = 'en-US';
       fallback.rate = slow ? 0.65 : 0.9;
+      fallback.volume = 1;
       const voices = native.getVoices();
       const voice = voices.find(item => /^en-US$/i.test(item.lang)) || voices.find(item => /^en\b/i.test(item.lang));
       if (voice) fallback.voice = voice;
@@ -673,6 +676,7 @@
     const utterance = new window.SpeechSynthesisUtterance(text);
     utterance.lang = 'en-US';
     utterance.rate = cloud ? (slow ? 0.8 : 0.95) : (slow ? 0.65 : 0.9);
+    utterance.volume = 1;
     if (!cloud && window.speechSynthesis) {
       const voices = window.speechSynthesis.getVoices();
       const voice = voices.find(item => /^en-US$/i.test(item.lang)) || voices.find(item => /^en\b/i.test(item.lang));

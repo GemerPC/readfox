@@ -15,28 +15,26 @@
 'use strict';
 const STORAGE = 'readfox.dialogue.audio.v1';
 const CACHE_PREFIX = 'readfox-tts-';
-const BOOST = Object.freeze({ off: 1, loud: 2.4, max: 4 });
 const life = window.ReadFoxAudioLifecycle;
 const IOS = !!life?.isIOS;
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const supported = Boolean(AudioContextClass) || typeof window.Audio === 'function';
-const has = key => Object.prototype.hasOwnProperty.call(BOOST, key);
-const settings = { engine: supported ? 'audio' : 'system', boost: IOS ? 'loud' : 'off' };
+const settings = { engine: supported ? 'audio' : 'system' };
 try {
   const saved = JSON.parse(localStorage.getItem(STORAGE) || 'null');
-  if (saved) {
-    if (['audio', 'system'].includes(saved.engine)) settings.engine = supported ? saved.engine : 'system';
-    if (has(saved.boost)) settings.boost = saved.boost;
-  }
+  if (saved && ['audio', 'system'].includes(saved.engine)) settings.engine = supported ? saved.engine : 'system';
   localStorage.setItem(STORAGE, JSON.stringify(settings));
 } catch (_) { /* Storage may be unavailable in private mode. */ }
 const log = (event, detail) => life?.log(event, detail);
+const levelListeners = new Set();
+function level() { return 1; }
 function configure(patch = {}) {
   if (['audio', 'system'].includes(patch.engine)) settings.engine = supported ? patch.engine : 'system';
-  if (has(patch.boost)) settings.boost = patch.boost;
   try { localStorage.setItem(STORAGE, JSON.stringify(settings)); } catch (_) { /* Optional. */ }
-  return { ...settings };
+  levelListeners.forEach(fn => { try { fn(); } catch (_) { /* A listener must not block the others. */ } });
+  return { ...settings, gain: 1 };
 }
+function onChange(fn) { if (typeof fn === 'function') levelListeners.add(fn); }
 
 const MAX_BYTES = 6 * 1024 * 1024;
 const MAX_CACHED = 24;
@@ -45,7 +43,7 @@ const entries = new Map(); // text -> { bytes, type, buffer? } shared by all syn
 let lastPlayback = null; // { origin, voice, fallback } of the latest phrase, shown in the dialogue settings
 const loading = new Set();
 
-function cacheKey(text) { return location.origin + '/__readfox-tts/' + encodeURIComponent(text.toLowerCase()); }
+function cacheKey(text, voiceKey) { return location.origin + '/__readfox-tts/' + encodeURIComponent((voiceKey || 'default') + '\n' + text.toLowerCase()); }
 function speechEndpoint() { return window.READFOX_CONFIG?.speechEndpoint || 'https://readfox.gemerpc.workers.dev/speech'; }
 // Saved phrases belong to one Fish voice: the server names it, and caches of other voices are removed.
 let voiceKeyRequest = null;
@@ -71,7 +69,7 @@ async function readStored(text) {
     const store = await phraseCache();
     if (!store) return null;
     const cache = store.cache;
-    const hit = await cache.match(cacheKey(text));
+    const hit = await cache.match(cacheKey(text, store.key));
     if (!hit) return null;
     return { bytes: await hit.arrayBuffer(), type: hit.headers.get('Content-Type') || 'audio/wav', voice: hit.headers.get('X-ReadFox-Voice') || '', origin: 'cache' };
   } catch (_) { return null; }
@@ -82,19 +80,20 @@ async function writeStored(text, entry) {
     const store = await phraseCache();
     if (!store || entry.voiceKey !== store.key) return;
     const cache = store.cache;
-    await cache.put(cacheKey(text), new Response(entry.bytes.slice(0), { headers: { 'Content-Type': entry.type, 'X-ReadFox-Voice': entry.voice || '' } }));
+    await cache.put(cacheKey(text, store.key), new Response(entry.bytes.slice(0), { headers: { 'Content-Type': entry.type, 'X-ReadFox-Voice': entry.voice || '' } }));
     const keys = await cache.keys();
     for (const request of keys.slice(0, Math.max(0, keys.length - 300))) await cache.delete(request);
   } catch (_) { /* Cache Storage is a bonus only. */ }
 }
-function remember(text, entry) {
-  entries.delete(text); entries.set(text, entry);
+function remember(key, entry) {
+  if (!entry || entry.fallback) return;
+  entries.delete(key); entries.set(key, entry);
   let total = 0;
   for (const value of entries.values()) total += value.bytes.byteLength;
   while (entries.size > MAX_CACHED || total > MAX_CACHED_BYTES) {
-    const key = entries.keys().next().value;
-    total -= entries.get(key).bytes.byteLength;
-    entries.delete(key);
+    const oldest = entries.keys().next().value;
+    total -= entries.get(oldest).bytes.byteLength;
+    entries.delete(oldest);
   }
 }
 
@@ -116,7 +115,7 @@ function createSynthesizer() {
   const outputName = 'tts-' + Math.random().toString(36).slice(2, 8);
   life?.registerOutput(outputName, () => ({
     engine: settings.engine, boost: settings.boost, transport: job?.transport || 'idle',
-    audioContextState: context?.state || 'none', elementPaused: media?.paused ?? true, volume: 1
+    audioContextState: context?.state || 'none', elementPaused: media?.paused ?? true, volume: level()
   }));
 
   const abortError = () => Object.assign(new Error('Озвучка отменена.'), { name: 'AbortError' });
@@ -125,7 +124,13 @@ function createSynthesizer() {
     return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })]).finally(() => clearTimeout(timer));
   }
   const current = j => job === j && !j.cancelled && j.id === serial && !document.hidden;
-  const wantsGraph = () => Boolean(AudioContextClass) && (!IOS || settings.boost !== 'off');
+  const wantsGraph = () => Boolean(AudioContextClass);
+  function applyLevel() {
+    setGain(gain, context);
+    // The silent keep-alive stays quiet. A real clip follows the selected level.
+    if (media && mediaUrl) { try { media.volume = Math.min(1, level()); } catch (_) { /* iOS ignores element volume. */ } }
+  }
+  onChange(applyLevel);
 
   /* ── Web Audio graph: source → gain → limiter → speakers ── */
   function graph(fresh = false) {
@@ -133,14 +138,38 @@ function createSynthesizer() {
     if (!context || context.state === 'closed') {
       context = new AudioContextClass();
       gain = context.createGain();
-      limiter = context.createDynamicsCompressor();
-      limiter.threshold.value = -9; limiter.knee.value = 6; limiter.ratio.value = 14;
-      limiter.attack.value = 0.003; limiter.release.value = 0.12;
-      gain.connect(limiter); limiter.connect(context.destination);
+      gain.connect(context.destination);
       micGeneration = life?.micGeneration?.() ?? 0;
     }
-    gain.gain.value = BOOST[settings.boost] ?? 1;
+    setGain(gain, context);
     return context;
+  }
+  function setGain(node, ctx) {
+    if (!node || !node.gain) return;
+    const value = level(), now = ctx && Number.isFinite(ctx.currentTime) ? ctx.currentTime : 0;
+    try { node.gain.cancelScheduledValues?.(now); } catch (_) {}
+    try {
+      if (node.gain.setValueAtTime) node.gain.setValueAtTime(value, now);
+      else node.gain.value = value;
+    } catch (_) { node.gain.value = value; }
+  }
+  function normalizeBuffer(buffer) {
+    if (!buffer || buffer._readfoxNorm || !buffer.getChannelData || !buffer.numberOfChannels) return buffer;
+    let peak = 0;
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const data = buffer.getChannelData(c);
+      for (let i = 0; i < data.length; i++) { const a = data[i] < 0 ? -data[i] : data[i]; if (a > peak) peak = a; }
+    }
+    const target = 0.95;
+    const scale = peak > 1 ? target / peak : (peak > 0.02 && peak < target ? target / peak : 0);
+    if (scale) {
+      for (let c = 0; c < buffer.numberOfChannels; c++) {
+        const data = buffer.getChannelData(c);
+        for (let i = 0; i < data.length; i++) data[i] *= scale;
+      }
+    }
+    buffer._readfoxNorm = true;
+    return buffer;
   }
 
   /* ── <audio> element: plain playback, silent keep-alive, and unlock ── */
@@ -182,7 +211,7 @@ function createSynthesizer() {
         const ctx = graph(reset || stale);
         tasks.push(bounded(Promise.resolve(ctx.resume()), 6000, 'Нажми «Повторить звук», чтобы разрешить воспроизведение.').then(() => {
           // A one-sample buffer completes the iOS unlock.
-          const source = ctx.createBufferSource(); source.buffer = ctx.createBuffer(1, 1, 22050); source.connect(ctx.destination);
+          const source = ctx.createBufferSource(); source.buffer = ctx.createBuffer(1, 1, 22050); source.connect(gain || ctx.destination);
           try { source.start(0); } catch (_) {}
           if (ctx.state !== 'running') throw Error('Браузер приостановил звук. Нажми «Повторить звук».');
         }).catch(error => { if (version === prepareVersion) graphFailure = error; }));
@@ -201,12 +230,6 @@ function createSynthesizer() {
     } catch (error) { if (version === prepareVersion) graphFailure = error; preparing = Promise.resolve(); }
   }
 
-  async function suspendOutput() {
-    const ctx = context;
-    if (!ctx || ctx.state !== 'running') return;
-    await bounded(Promise.resolve(ctx.suspend()), 3000, 'Браузер ещё завершает звук.');
-    log('[AUDIO_CONTEXT_RELEASED]', { state: ctx.state });
-  }
   function detachSource(j) {
     if (j.source) { j.source.onended = null; try { j.source.stop(); } catch (_) {} try { j.source.disconnect(); } catch (_) {} j.source = null; }
   }
@@ -215,8 +238,7 @@ function createSynthesizer() {
     if (!keepPreparation) { prepareVersion++; preparing = Promise.resolve(); graphFailure = elementFailure = null; priming = false; }
     if (old) { old.cancelled = true; old.abort.abort(); clearTimeout(old.timer); detachSource(old); log('[TTS_PLAYBACK_END]', { cancelled: true }); }
     if (!priming) clearElement();
-    if (!keepPreparation) void suspendOutput().catch(() => {});
-    try { native?.cancel(); } catch (_) {}
+    try { if (native && (native.speaking || native.pending)) native.cancel(); } catch (_) {}
     if (old) setTimeout(() => old.utterance.onend?.({ type: 'end', cancelled: true }), 60);
   }
 
@@ -261,12 +283,14 @@ function createSynthesizer() {
     }
   }
   async function fetchEntry(text, j, signal) {
-    let entry = entries.get(text);
-    if (entry) { entries.delete(text); entries.set(text, entry); entry.origin = 'memory'; return entry; }
+    const voiceKey = await currentVoiceKey();
+    const memoryKey = (voiceKey || '') + '\n' + text;
+    let entry = entries.get(memoryKey);
+    if (entry && !entry.fallback) { entries.delete(memoryKey); entries.set(memoryKey, entry); entry.origin = 'memory'; return entry; }
     entry = await readStored(text);
     // Only phrases in the current Fish voice are kept between visits; fallback audio has no voice key.
-    if (!entry) { entry = await download(text, j, signal); void writeStored(text, entry); }
-    remember(text, entry);
+    if (!entry) { entry = await download(text, j, signal); if (!entry.fallback) void writeStored(text, entry); }
+    remember(memoryKey, entry);
     return entry;
   }
 
@@ -280,7 +304,6 @@ function createSynthesizer() {
   async function finish(j) {
     if (!current(j)) return;
     clearTimeout(j.timer); detachSource(j); clearElement();
-    try { await suspendOutput(); } catch (error) { if (current(j)) fail(j, error); return; }
     if (!current(j)) return;
     job = null;
     log('[TTS_PLAYBACK_END]', { cancelled: false });
@@ -288,7 +311,7 @@ function createSynthesizer() {
   }
   function fail(j, error) {
     if (!current(j)) return;
-    job = null; j.cancelled = true; j.abort.abort(); clearTimeout(j.timer); detachSource(j); clearElement(); void suspendOutput().catch(() => {});
+    job = null; j.cancelled = true; j.abort.abort(); clearTimeout(j.timer); detachSource(j); clearElement();
     log('[TTS_PLAYBACK_END]', { failed: true, errorName: error?.name || 'Error' });
     j.utterance.onerror?.({ error: 'audio-playback', message: error?.message || 'Не удалось озвучить ответ.' });
   }
@@ -297,7 +320,8 @@ function createSynthesizer() {
     const audio = element(); clearElement();
     mediaUrl = URL.createObjectURL(new Blob([entry.bytes], { type: entry.type }));
     const url = mediaUrl, rate = j.rate;
-    audio.volume = 1; audio.muted = false; audio.loop = false; audio.srcObject = null; audio.src = url;
+    try { audio.volume = Math.min(1, level()); } catch (_) { /* iOS ignores this; the gain node is the real control. */ }
+    audio.muted = false; audio.loop = false; audio.srcObject = null; audio.src = url;
     audio.defaultPlaybackRate = audio.playbackRate = rate;
     const valid = () => current(j) && mediaUrl === url;
     audio.onloadedmetadata = () => { if (valid() && (!Number.isFinite(audio.duration) || audio.duration <= 0 || audio.duration > 120)) fail(j, Error('Сервис вернул неподходящее аудио.')); };
@@ -322,12 +346,14 @@ function createSynthesizer() {
     if (!current(j)) return false;
     const buffer = entry.buffer;
     if (!Number.isFinite(buffer.duration) || buffer.duration <= 0 || buffer.duration > 120 || buffer.length * buffer.numberOfChannels > 6000000) throw Error('Сервис вернул слишком длинное аудио.');
+    normalizeBuffer(buffer);
     await bounded(Promise.resolve(ctx.resume()), 6000, 'Нажми «Повторить звук», чтобы включить динамик.');
     if (!current(j)) return false;
     if (ctx.state !== 'running') return false;
     const source = ctx.createBufferSource();
     j.source = source; source.buffer = buffer; source.playbackRate.value = j.rate;
     source.connect(gain);
+    setGain(gain, ctx);
     source.onended = () => { if (current(j)) void finish(j); };
     // After a microphone session iOS needs a moment on the new route; a late start keeps the first syllable intact.
     const afterMic = IOS && (life?.micGeneration?.() ?? 0) > 0;
@@ -358,7 +384,11 @@ function createSynthesizer() {
   }
 
   function speak(utterance) {
-    if (settings.engine === 'system') { lastPlayback = { origin: 'system', voice: '', fallback: '' }; native.speak(utterance); return; }
+    if (settings.engine === 'system') {
+      lastPlayback = { origin: 'system', voice: '', fallback: '' };
+      try { utterance.volume = 1; } catch (_) { /* Some stubs omit volume. */ }
+      native.speak(utterance); return;
+    }
     cancel(true);
     const rate = Math.min(1.25, Math.max(0.75, Number(utterance.rate) || 0.95));
     const j = { id: ++serial, utterance, text: String(utterance.text || '').trim(), rate, abort: new AbortController(), playing: false, cancelled: false, source: null, timer: null, transport: '' };
@@ -380,10 +410,45 @@ function createSynthesizer() {
     get pending() { return !!(job && !job.playing) || priming || !!native?.pending; },
     get engine() { return settings.engine; },
     speak, cancel, prepare, preload,
-    beforeCapture: async () => { await suspendOutput(); clearElement(); await window.ReadFoxSound?.release?.(); },
-    resume() { if (settings.engine === 'system') native?.resume(); },
+    beforeCapture: async () => { cancel(true); clearElement(); try { life?.setAudioSession?.('play-and-record'); } catch (_) {} await window.ReadFoxSound?.release?.(); },
+    resume() {
+      if (settings.engine === 'system') native?.resume();
+      else if (context && context.state === 'suspended') void context.resume().catch(() => {});
+    },
     getVoices() { return settings.engine === 'system' ? (native?.getVoices() || []) : []; }
   };
 }
-window.ReadFoxDialogueAudio = Object.freeze({ supported, settings: () => ({ ...settings }), configure, createSynthesizer, lastPlayback: () => lastPlayback && { ...lastPlayback }, boostLevels: Object.freeze(Object.keys(BOOST)) });
+function speechText(raw) {
+  let text = String(raw || '');
+  text = text.replace(/[\u2018\u2019\u2032]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[\u2013\u2014]/g, ', ');
+  text = text.replace(/[\u2600-\u27BF\uFE0F]/g, '');
+  text = text.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '');
+  text = text.replace(/[*_~`#]+/g, '');
+  text = text.replace(/^\s*(?:tommy|hailey|fox)\s*:\s*/i, '');
+  text = text.replace(/\s+/g, ' ').trim();
+  if (text && !/[.!?]$/.test(text)) text += '.';
+  return text;
+}
+function speechClips(raw) {
+  const text = speechText(raw);
+  if (!text) return [];
+  if (text.length <= 240) return [text];
+  const clips = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const mark = text.charAt(i);
+    if ((mark === '.' || mark === '!' || mark === '?') && i - start >= 40) {
+      const next = text.charAt(i + 1);
+      if (!next || next === ' ') {
+        clips.push(text.slice(start, i + 1).trim());
+        start = i + 1;
+        while (text.charAt(start) === ' ') start += 1;
+      }
+    }
+  }
+  const tail = text.slice(start).trim();
+  if (tail) clips.push(tail);
+  return clips.length ? clips : [text];
+}
+window.ReadFoxDialogueAudio = Object.freeze({ supported, settings: () => ({ ...settings, gain: 1 }), gain: level, configure, onChange, createSynthesizer, lastPlayback: () => lastPlayback && { ...lastPlayback }, speechText, speechClips });
 })();
