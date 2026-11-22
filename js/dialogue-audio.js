@@ -15,7 +15,9 @@
 'use strict';
 const STORAGE = 'readfox.dialogue.audio.v1';
 const CACHE_PREFIX = 'readfox-tts-';
-const BOOST = Object.freeze({ off: 1, loud: 2.4, max: 4 });
+// Ordinary / louder / maximum. The top step is above 1 so a phone already at full
+// volume can still get louder; a gentle limiter only catches that peak.
+const BOOST = Object.freeze({ off: 0.35, loud: 0.7, max: 1.5 });
 const life = window.ReadFoxAudioLifecycle;
 const IOS = !!life?.isIOS;
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -31,12 +33,16 @@ try {
   localStorage.setItem(STORAGE, JSON.stringify(settings));
 } catch (_) { /* Storage may be unavailable in private mode. */ }
 const log = (event, detail) => life?.log(event, detail);
+const levelListeners = new Set();
+function level() { return BOOST[settings.boost] ?? BOOST.loud; }
 function configure(patch = {}) {
   if (['audio', 'system'].includes(patch.engine)) settings.engine = supported ? patch.engine : 'system';
   if (has(patch.boost)) settings.boost = patch.boost;
   try { localStorage.setItem(STORAGE, JSON.stringify(settings)); } catch (_) { /* Optional. */ }
-  return { ...settings };
+  levelListeners.forEach(fn => { try { fn(); } catch (_) { /* A listener must not block the others. */ } });
+  return { ...settings, gain: level() };
 }
+function onChange(fn) { if (typeof fn === 'function') levelListeners.add(fn); }
 
 const MAX_BYTES = 6 * 1024 * 1024;
 const MAX_CACHED = 24;
@@ -116,7 +122,7 @@ function createSynthesizer() {
   const outputName = 'tts-' + Math.random().toString(36).slice(2, 8);
   life?.registerOutput(outputName, () => ({
     engine: settings.engine, boost: settings.boost, transport: job?.transport || 'idle',
-    audioContextState: context?.state || 'none', elementPaused: media?.paused ?? true, volume: 1
+    audioContextState: context?.state || 'none', elementPaused: media?.paused ?? true, volume: level()
   }));
 
   const abortError = () => Object.assign(new Error('Озвучка отменена.'), { name: 'AbortError' });
@@ -125,7 +131,14 @@ function createSynthesizer() {
     return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })]).finally(() => clearTimeout(timer));
   }
   const current = j => job === j && !j.cancelled && j.id === serial && !document.hidden;
-  const wantsGraph = () => Boolean(AudioContextClass) && (!IOS || settings.boost !== 'off');
+  const wantsGraph = () => Boolean(AudioContextClass);
+  function applyLevel() {
+    const value = level();
+    if (gain) gain.gain.value = value;
+    // The silent keep-alive stays quiet. A real clip follows the selected level.
+    if (media && mediaUrl) { try { media.volume = Math.min(1, value); } catch (_) { /* iOS ignores element volume. */ } }
+  }
+  onChange(applyLevel);
 
   /* ── Web Audio graph: source → gain → limiter → speakers ── */
   function graph(fresh = false) {
@@ -134,12 +147,13 @@ function createSynthesizer() {
       context = new AudioContextClass();
       gain = context.createGain();
       limiter = context.createDynamicsCompressor();
-      limiter.threshold.value = -9; limiter.knee.value = 6; limiter.ratio.value = 14;
-      limiter.attack.value = 0.003; limiter.release.value = 0.12;
+      // Only the maximum step (above unity) should meet the limiter. 0.35 and 0.7 stay linear.
+      limiter.threshold.value = -1; limiter.knee.value = 0; limiter.ratio.value = 12;
+      limiter.attack.value = 0.003; limiter.release.value = 0.05;
       gain.connect(limiter); limiter.connect(context.destination);
       micGeneration = life?.micGeneration?.() ?? 0;
     }
-    gain.gain.value = BOOST[settings.boost] ?? 1;
+    gain.gain.value = level();
     return context;
   }
 
@@ -297,7 +311,8 @@ function createSynthesizer() {
     const audio = element(); clearElement();
     mediaUrl = URL.createObjectURL(new Blob([entry.bytes], { type: entry.type }));
     const url = mediaUrl, rate = j.rate;
-    audio.volume = 1; audio.muted = false; audio.loop = false; audio.srcObject = null; audio.src = url;
+    try { audio.volume = Math.min(1, level()); } catch (_) { /* iOS ignores this; the gain node is the real control. */ }
+    audio.muted = false; audio.loop = false; audio.srcObject = null; audio.src = url;
     audio.defaultPlaybackRate = audio.playbackRate = rate;
     const valid = () => current(j) && mediaUrl === url;
     audio.onloadedmetadata = () => { if (valid() && (!Number.isFinite(audio.duration) || audio.duration <= 0 || audio.duration > 120)) fail(j, Error('Сервис вернул неподходящее аудио.')); };
@@ -358,7 +373,11 @@ function createSynthesizer() {
   }
 
   function speak(utterance) {
-    if (settings.engine === 'system') { lastPlayback = { origin: 'system', voice: '', fallback: '' }; native.speak(utterance); return; }
+    if (settings.engine === 'system') {
+      lastPlayback = { origin: 'system', voice: '', fallback: '' };
+      try { utterance.volume = Math.min(1, level()); } catch (_) { /* Some stubs omit volume. */ }
+      native.speak(utterance); return;
+    }
     cancel(true);
     const rate = Math.min(1.25, Math.max(0.75, Number(utterance.rate) || 0.95));
     const j = { id: ++serial, utterance, text: String(utterance.text || '').trim(), rate, abort: new AbortController(), playing: false, cancelled: false, source: null, timer: null, transport: '' };
@@ -388,5 +407,5 @@ function createSynthesizer() {
     getVoices() { return settings.engine === 'system' ? (native?.getVoices() || []) : []; }
   };
 }
-window.ReadFoxDialogueAudio = Object.freeze({ supported, settings: () => ({ ...settings }), configure, createSynthesizer, lastPlayback: () => lastPlayback && { ...lastPlayback }, boostLevels: Object.freeze(Object.keys(BOOST)) });
+window.ReadFoxDialogueAudio = Object.freeze({ supported, settings: () => ({ ...settings, gain: level() }), gain: level, configure, onChange, createSynthesizer, lastPlayback: () => lastPlayback && { ...lastPlayback }, boostLevels: Object.freeze(Object.keys(BOOST)) });
 })();

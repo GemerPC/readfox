@@ -663,6 +663,7 @@
       const fallback = new window.SpeechSynthesisUtterance(text);
       fallback.lang = 'en-US';
       fallback.rate = slow ? 0.65 : 0.9;
+      fallback.volume = Math.min(1, window.ReadFoxDialogueAudio&&typeof window.ReadFoxDialogueAudio.gain==='function'?window.ReadFoxDialogueAudio.gain():1);
       const voices = native.getVoices();
       const voice = voices.find(item => /^en-US$/i.test(item.lang)) || voices.find(item => /^en\b/i.test(item.lang));
       if (voice) fallback.voice = voice;
@@ -673,6 +674,7 @@
     const utterance = new window.SpeechSynthesisUtterance(text);
     utterance.lang = 'en-US';
     utterance.rate = cloud ? (slow ? 0.8 : 0.95) : (slow ? 0.65 : 0.9);
+    utterance.volume = Math.min(1, window.ReadFoxDialogueAudio&&typeof window.ReadFoxDialogueAudio.gain==='function'?window.ReadFoxDialogueAudio.gain():1);
     if (!cloud && window.speechSynthesis) {
       const voices = window.speechSynthesis.getVoices();
       const voice = voices.find(item => /^en-US$/i.test(item.lang)) || voices.find(item => /^en\b/i.test(item.lang));

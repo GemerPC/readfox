@@ -337,7 +337,8 @@
         let spoken;
         try { spoken = new window.SpeechSynthesisUtterance(value); }
         catch (_) { pause('Озвучка недоступна. Можно прочитать ответ и продолжить с клавиатуры.'); return; }
-        spoken.lang = 'en-US'; spoken.rate = 0.9; spoken.pitch = 1; spoken.volume = 1;
+        spoken.lang = 'en-US'; spoken.rate = 0.9; spoken.pitch = 1;
+        spoken.volume = Math.min(1, window.ReadFoxDialogueAudio&&typeof window.ReadFoxDialogueAudio.gain==='function'?window.ReadFoxDialogueAudio.gain():1);
         try {
           const voices = synthesis.getVoices();
           const voice = voices.find(function (v) { return /^en-US$/i.test(v.lang); }) || voices.find(function (v) { return /^en\b/i.test(v.lang); });

@@ -93,7 +93,7 @@ function watchLog(log){
 function settingsMarkup(s){
  const audio=window.ReadFoxDialogueAudio,a=audio?.settings()||{engine:'system',boost:'off'},system=a.engine==='system';
  const seg=(name,value,label,current,off)=>`<button type="button" class="dlg-seg" data-dialogue-${name}="${value}" aria-pressed="${current===value}" ${off?'disabled':''}>${label}</button>`;
- return `<div class="dlg-sheet${settingsOpen?' is-open':''}" id="dialogueSettings" role="region" aria-label="Настройки диалога" ${settingsOpen?'':'inert'}><div class="dlg-sheet-body"><section><div class="dlg-sheet-head"><span>Слова для разговора</span><strong>${s.used.length} / ${s.deck.length}</strong></div><div class="dialogue-words">${s.deck.map(w=>chip(w,s.used.includes(w.key))).join('')}</div></section><section class="dlg-sheet-row"><div class="dlg-setting"><span>Голос Фокса</span><div class="dlg-segmented">${seg('engine','audio','Улучшенный',a.engine,!audio?.supported)}${seg('engine','system','Системный',a.engine,false)}</div></div><div class="dlg-setting"><span>Громкость</span><div class="dlg-segmented">${seg('boost','off','Обычная',a.boost,system)}${seg('boost','loud','Громче',a.boost,system)}${seg('boost','max','Максимум',a.boost,system)}</div></div></section><section class="dlg-sheet-actions"><button type="button" class="dlg-action" data-dialogue-action="voice-again">↻ Прослушать ответ</button><button type="button" class="dlg-action" data-dialogue-action="theme">☾ Оформление</button><button type="button" class="dlg-action" data-dialogue-action="exit">Другая тема</button></section><p class="dlg-sheet-meta">${esc(topics[s.topic].title)} · ${esc(level())} · проверки ${s.correct} / ${s.checked}</p><p class="dlg-sheet-meta" id="dialogueVoiceInfo">${esc(voiceInfo())}</p></div></div>`;
+ return `<div class="dlg-sheet${settingsOpen?' is-open':''}" id="dialogueSettings" role="region" aria-label="Настройки диалога" ${settingsOpen?'':'inert'}><div class="dlg-sheet-body"><section><div class="dlg-sheet-head"><span>Слова для разговора</span><strong>${s.used.length} / ${s.deck.length}</strong></div><div class="dialogue-words">${s.deck.map(w=>chip(w,s.used.includes(w.key))).join('')}</div></section><section class="dlg-sheet-row"><div class="dlg-setting"><span>Голос Фокса</span><div class="dlg-segmented">${seg('engine','audio','Улучшенный',a.engine,!audio?.supported)}${seg('engine','system','Системный',a.engine,false)}</div></div><div class="dlg-setting"><span>Громкость</span><div class="dlg-segmented">${seg('boost','off','Обычная',a.boost,false)}${seg('boost','loud','Громче',a.boost,false)}${seg('boost','max','Максимум',a.boost,false)}</div></div></section><section class="dlg-sheet-actions"><button type="button" class="dlg-action" data-dialogue-action="voice-again">↻ Прослушать ответ</button><button type="button" class="dlg-action" data-dialogue-action="theme">☾ Оформление</button><button type="button" class="dlg-action" data-dialogue-action="exit">Другая тема</button></section><p class="dlg-sheet-meta">${esc(topics[s.topic].title)} · ${esc(level())} · проверки ${s.correct} / ${s.checked}</p><p class="dlg-sheet-meta" id="dialogueVoiceInfo">${esc(voiceInfo())}</p></div></div>`;
 }
 // Which voice actually read the last phrase, so a wrong voice can be told apart from a stale page or a fallback.
 function voiceInfo(){
@@ -105,7 +105,7 @@ function voiceInfo(){
 function syncSettings(){
  const a=window.ReadFoxDialogueAudio?.settings();if(!a)return;
  document.querySelectorAll('#dialogueSettings [data-dialogue-engine]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.dialogueEngine===a.engine)));
- document.querySelectorAll('#dialogueSettings [data-dialogue-boost]').forEach(x=>{x.setAttribute('aria-pressed',String(x.dataset.dialogueBoost===a.boost));x.disabled=a.engine==='system';});
+ document.querySelectorAll('#dialogueSettings [data-dialogue-boost]').forEach(x=>{x.setAttribute('aria-pressed',String(x.dataset.dialogueBoost===a.boost));x.disabled=false;});
 }
 function toggleSettings(open=!settingsOpen){
  settingsOpen=open;const sheet=document.getElementById('dialogueSettings');if(sheet){sheet.classList.toggle('is-open',open);sheet.inert=!open;}
@@ -250,7 +250,7 @@ function chat(){
  return `<div class="dialogue-chat is-live">${headerMarkup(s)}<div class="dialogue-messages" id="dialogueMessages" role="log" aria-live="polite" aria-label="Разговор с Фоксом"><div class="dlg-thread">${slides}<section id="dialogueVoiceInterim" class="dlg-slide is-user dlg-interim" hidden><span class="dlg-slide-who">Ты</span><p class="dlg-slide-text" lang="en"></p></section></div></div><div class="dialogue-composer-wrap"><button type="button" class="dlg-jump" id="dialogueJump" data-dialogue-action="jump" aria-label="К последней реплике" hidden>↓</button><p id="dialogueVoiceNotice" class="dlg-notice" role="status" hidden></p>${hintShown&&s.hint?`<div class="dialogue-ai-hint" lang="en">Например: ${esc(s.hint)}</div>`:''}<form id="dialogueForm" class="dialogue-composer"><button type="button" class="dlg-hint-btn" data-dialogue-action="hint" aria-pressed="${hintShown}" aria-label="${hintShown?'Скрыть пример':'Подсказка'}" title="${hintShown?'Скрыть пример':'Подсказка'}" ${!s.hint||disabled?'disabled':''}>${bulbIcon}</button><label class="sr-only" for="dialogueInput">Твой ответ</label><input id="dialogueInput" value="${esc(s.draft)}" placeholder="${busy?'Фокс пишет…':'Напиши ответ…'}" maxlength="800" autocomplete="off" enterkeyhint="send" ${disabled?'disabled':''}><button id="dialogueSend" type="submit" aria-label="Отправить ответ" ${disabled||!s.draft.trim()?'disabled':''}>↑</button></form></div></div>`;
 }
 
-let dualSynthInstance=null,dualRec=null,dualToken=0,dualListening=false,dualNotice='',dualAuto=false,dualTimer=null,dualCoach=null,dualSpeaking=false,dualStreak=0,dualGlowIndex=-1,dualReadPaused=true,dualReadPlaying=false,dualAudioCtx=null,dualPreview='',dualSpoken=-1,dualSpeakTimer=null,dualVoicesHooked=false,dualEl=null,dualSilent='',dualHeld=false,dualTapIndex=-1;
+let dualSynthInstance=null,dualRec=null,dualToken=0,dualListening=false,dualNotice='',dualAuto=false,dualTimer=null,dualCoach=null,dualSpeaking=false,dualStreak=0,dualGlowIndex=-1,dualReadPaused=true,dualReadPlaying=false,dualAudioCtx=null,dualGain=null,dualRouted=false,dualPreview='',dualSpoken=-1,dualSpeakTimer=null,dualVoicesHooked=false,dualEl=null,dualSilent='',dualHeld=false,dualTapIndex=-1;
 const dualClips=new Map();
 const COACH_INTRO='Почти! Вот это слово немного не похоже';
 const COACH_PRAISE='Отлично, теперь похоже!';
@@ -336,9 +336,9 @@ function dualDing(){
   const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)return;
   dualAudioCtx=dualAudioCtx||new AudioCtx();
   const ctx=dualAudioCtx;if(ctx.state==='suspended')void ctx.resume().catch(()=>{});
-  const start=ctx.currentTime+.02,osc=ctx.createOscillator(),gain=ctx.createGain();
+  const start=ctx.currentTime+.02,osc=ctx.createOscillator(),gain=ctx.createGain(),loud=dualLevel();
   osc.type='sine';osc.frequency.value=880;
-  gain.gain.setValueAtTime(0,start);gain.gain.linearRampToValueAtTime(.028,start+.015);gain.gain.exponentialRampToValueAtTime(.0008,start+.14);
+  gain.gain.setValueAtTime(0,start);gain.gain.linearRampToValueAtTime(.028*loud,start+.015);gain.gain.exponentialRampToValueAtTime(Math.max(.0008,.0008*loud),start+.14);
   osc.connect(gain);gain.connect(ctx.destination);osc.start(start);osc.stop(start+.16);
  }catch(_){}
 }
@@ -449,15 +449,41 @@ function dualMakeSilent(){
  write(36,'data');view.setUint32(40,0,true);
  return URL.createObjectURL(new Blob([bytes],{type:'audio/wav'}));
 }
+function dualLevel(){
+ const audio=window.ReadFoxDialogueAudio,value=audio&&typeof audio.gain==='function'?Number(audio.gain()):0.7;
+ return value>0?value:0.7;
+}
+function dualApplyVolume(){
+ const value=dualLevel();
+ if(dualGain&&dualGain.gain)dualGain.gain.value=value;
+ if(dualEl&&!dualRouted){try{dualEl.volume=Math.min(1,value);}catch(_){}}
+}
 function dualEnsureOutput(){
  if(dualEl)return dualEl;
  const Ctor=window.Audio;if(typeof Ctor!=='function')return null;
- dualEl=new Ctor();dualEl.preload='auto';dualEl.volume=1;
+ dualEl=new Ctor();dualEl.preload='auto';
+ try{dualEl.volume=1;}catch(_){}
  try{dualEl.setAttribute('playsinline','');dualEl.setAttribute('webkit-playsinline','');}catch(_){}
  return dualEl;
 }
+function dualRouteOutput(){
+ if(dualRouted||!dualEl)return;
+ const Ctx=window.AudioContext||window.webkitAudioContext;
+ if(!Ctx){dualApplyVolume();return;}
+ try{
+  if(!dualAudioCtx||dualAudioCtx.state==='closed')dualAudioCtx=new Ctx();
+  if(dualAudioCtx.state==='suspended'&&dualAudioCtx.resume)dualAudioCtx.resume();
+  dualGain=dualAudioCtx.createGain();
+  dualGain.gain.value=dualLevel();
+  const source=dualAudioCtx.createMediaElementSource(dualEl);
+  source.connect(dualGain);dualGain.connect(dualAudioCtx.destination);
+  dualRouted=true;
+  try{dualEl.volume=1;}catch(_){}
+ }catch(_){dualRouted=false;dualGain=null;dualApplyVolume();}
+}
 function dualUnlockOutput(){
  const el=dualEnsureOutput();if(!el)return;
+ dualRouteOutput();
  if(!dualSilent){try{dualSilent=dualMakeSilent();}catch(_){dualSilent='';}}
  try{
   el.onended=el.onerror=null;
@@ -467,6 +493,7 @@ function dualUnlockOutput(){
   dualHeld=true;
  }catch(_){}
  dualResumeOutput();
+ dualApplyVolume();
 }
 function dualResumeOutput(){
  try{if(dualAudioCtx&&dualAudioCtx.state==='suspended')dualAudioCtx.resume();}catch(_){}
@@ -517,6 +544,7 @@ function dualSystemSpeak(text,speaker,rate,onend,onblock){
  if(!native||typeof native.speak!=='function'){if(onblock)onblock();return;}
  const utterance=new SpeechSynthesisUtterance(text);
  utterance.lang='en-US';utterance.rate=rate||0.95;
+ try{utterance.volume=Math.min(1,dualLevel());}catch(_){}
  try{const pair=dualNamedVoices();const chosen=speaker==='hailey'?pair.hailey:pair.tommy;if(chosen)utterance.voice=chosen;}catch(_){}
  utterance.onend=()=>{if(onend)onend();};
  utterance.onerror=event=>{
@@ -781,5 +809,6 @@ function bind(){const el=document.getElementById('dialogueContent');if(!el||el.d
 window.ReadFoxDialogue=Object.freeze({render,stop,exportState:()=>JSON.parse(JSON.stringify(state)),importState:value=>{stop();state=clean(value);error='';shown.clear();save();render();}});
 window.visualViewport?.addEventListener('resize',fitViewport);window.visualViewport?.addEventListener('scroll',fitViewport);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&settingsOpen)toggleSettings(false);});
+try{window.ReadFoxDialogueAudio?.onChange?.(dualApplyVolume);}catch(_){}
 document.addEventListener('DOMContentLoaded',bind);window.addEventListener('readfox:ready',bind);window.addEventListener('readfox:view',e=>{if(e.detail?.view==='dialogue'){window.ReadFoxVoice?.stop?.();bind();render(true);}else stop();});window.addEventListener('pagehide',stop);document.addEventListener('visibilitychange',()=>{if(document.hidden&&voiceState.active)voice?.pause('Разговор на паузе. Нажми «Продолжить голосом», когда вернёшься.');});if(document.readyState!=='loading')bind();
 })();

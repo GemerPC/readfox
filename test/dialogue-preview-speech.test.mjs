@@ -55,7 +55,7 @@ const speechSynthesis = {
   getVoices: () => [{ name: 'Daniel', lang: 'en-GB' }, { name: 'Samantha', lang: 'en-US' }],
   cancel() { this.cancels += 1; this.speaking = false; },
   resume() {},
-  speak(utterance) { spoken.push({ text: utterance.text, voice: utterance.voice && utterance.voice.name, sync: duringClick, utterance }); }
+  speak(utterance) { spoken.push({ text: utterance.text, voice: utterance.voice && utterance.voice.name, volume: utterance.volume, sync: duringClick, utterance }); }
 };
 class SpeechSynthesisUtterance {
   constructor(text) { this.text = text; this.rate = 1; this.pitch = 1; this.lang = ''; this.voice = null; }
@@ -66,6 +66,18 @@ class Rec {
 }
 const recs = [];
 const cloud = { cancels: [], suspends: 0, prepare() {}, resume() { this.resumes = (this.resumes || 0) + 1; }, cancel(keep) { this.cancels.push(keep !== false); if (keep === false) this.suspends += 1; }, speak() { this.spoken = (this.spoken || 0) + 1; } };
+const volumeHooks = [];
+const volumeSteps = { off: 0.35, loud: 0.7, max: 1.5 };
+let volumeBoost = 'loud';
+class GainNode { constructor() { this.gain = { value: 0 }; } connect() {} }
+const audioContexts = [];
+class AudioCtx {
+  constructor() { this.state = 'running'; this.destination = {}; audioContexts.push(this); }
+  resume() { this.state = 'running'; return Promise.resolve(); }
+  createGain() { const node = new GainNode(); this.gains = this.gains || []; this.gains.push(node); return node; }
+  createMediaElementSource(el) { this.sourceEl = el; return { connect() {} }; }
+  createOscillator() { return { type: '', frequency: { value: 0 }, connect() {}, start() {}, stop() {} }; }
+}
 const clicks = [];
 const content = { innerHTML: '', dataset: {}, querySelectorAll: () => [], addEventListener(type, fn) { if (type === 'click') clicks.push(fn); } };
 const storage = new Map();
@@ -90,7 +102,15 @@ const window = {
   setTimeout,
   clearTimeout,
   addEventListener() {},
-  ReadFoxDialogueAudio: { createSynthesizer: () => cloud, supported: true, settings: () => ({ engine: 'audio', boost: 'off' }) },
+  AudioContext: AudioCtx,
+  ReadFoxDialogueAudio: {
+    createSynthesizer: () => cloud,
+    supported: true,
+    settings: () => ({ engine: 'audio', boost: volumeBoost }),
+    gain: () => volumeSteps[volumeBoost],
+    configure(patch) { if (patch && patch.boost) volumeBoost = patch.boost; volumeHooks.forEach(fn => fn()); },
+    onChange(fn) { volumeHooks.push(fn); }
+  },
   ReadFoxAudioLifecycle: { waitForMicrophones: () => micGate, beginMic: () => 'mic-1', micEvent() {}, endMic() {}, snapshot: () => ({ activeRecognizers: 0 }) },
   localStorage: { getItem: key => storage.get(key) || null, setItem(key, value) { storage.set(key, value); } }
 };
@@ -143,6 +163,15 @@ test('preview unlocks audio in the click and plays each cloud voice in order', a
   await drain();
   assert.ok(plays.length >= 2);
   assert.equal(plays[1].el, plays[0].el);
+  assert.equal(audioContexts.length, 1);
+  assert.equal(audioContexts[0].sourceEl, plays[0].el);
+  assert.ok(Math.abs(audioContexts[0].gains[0].gain.value - 0.7) < 0.001);
+  window.ReadFoxDialogueAudio.configure({ boost: 'off' });
+  assert.ok(Math.abs(audioContexts[0].gains[0].gain.value - 0.35) < 0.001);
+  window.ReadFoxDialogueAudio.configure({ boost: 'max' });
+  assert.ok(Math.abs(audioContexts[0].gains[0].gain.value - 1.5) < 0.001);
+  assert.equal(audioContexts.length, 1);
+  window.ReadFoxDialogueAudio.configure({ boost: 'loud' });
   assert.match(content.innerHTML, /is-speaking/);
   plays[1].el.onended();
   await drain();
@@ -162,6 +191,7 @@ test('a failed cloud voice falls back to two different English voices', async ()
   assert.equal(spoken.length, 1);
   assert.equal(spoken[0].text, scripts.script('cafe').lines[0].en);
   assert.equal(spoken[0].voice, 'Samantha');
+  assert.ok(Math.abs(spoken[0].volume - 0.7) < 0.001);
   spoken[0].utterance.onend();
   await drain();
   assert.equal(spoken[1].text, scripts.script('cafe').lines[1].en);
